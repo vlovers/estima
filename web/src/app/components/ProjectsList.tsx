@@ -1,0 +1,187 @@
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import {
+  Loader,
+  Alert,
+  Title,
+  Button,
+  Group,
+  Card,
+  Text,
+  SimpleGrid,
+  ActionIcon,
+  Modal,
+  TextInput,
+} from '@mantine/core';
+import { Link, useNavigate } from 'react-router-dom';
+import { IconPencil, IconTrash, IconSearch } from '@tabler/icons-react';
+import { useState, useEffect } from 'react';
+import { notifications } from '@mantine/notifications';
+import { api } from '../services/authApiService';
+
+// Define the type for a single project based on your API
+interface Project {
+  id: string;
+  name: string;
+  description: string;
+}
+
+// API functions
+const fetchProjects = async (): Promise<Project[]> => {
+  const { data } = await api.get('/projects');
+  return data;
+};
+
+const deleteProject = async (id: string): Promise<void> => {
+  await api.delete(`/projects/${id}`);
+};
+
+export function ProjectsList() {
+  const queryClient = useQueryClient();
+  const navigate = useNavigate();
+  const [deleteModalOpened, setDeleteModalOpened] = useState(false);
+  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(
+    null
+  );
+  const [searchQuery, setSearchQuery] = useState('');
+
+  const {
+    data: projects,
+    error,
+    isLoading,
+    isSuccess,
+  } = useQuery<Project[], Error>({
+    queryKey: ['projects'],
+    queryFn: fetchProjects,
+  });
+
+  useEffect(() => {
+    if (isSuccess && projects && projects.length === 0) {
+      navigate('/projects/new');
+    }
+  }, [isSuccess, projects, navigate]);
+
+  const deleteMutation = useMutation<void, Error, string>({
+    mutationFn: deleteProject,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['projects'] });
+      setDeleteModalOpened(false);
+      notifications.show({
+        title: 'Project Deleted',
+        message: 'The project has been successfully deleted.',
+        color: 'green',
+      });
+    },
+    onError: (error) => {
+      notifications.show({
+        title: 'Deletion Failed',
+        message: error.message,
+        color: 'red',
+      });
+    },
+  });
+
+  const openDeleteModal = (id: string) => {
+    setSelectedProjectId(id);
+    setDeleteModalOpened(true);
+  };
+
+  const handleDelete = () => {
+    if (selectedProjectId) {
+      deleteMutation.mutate(selectedProjectId);
+    }
+  };
+
+  const filteredProjects = projects?.filter((project) =>
+    project.name.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  if (isLoading) {
+    return <Loader />;
+  }
+
+  if (error) {
+    return (
+      <Alert title="Error" color="red">
+        Failed to load projects: {error.message}
+      </Alert>
+    );
+  }
+
+  return (
+    <div>
+      <Group position="apart" mb="xl">
+        <Title order={2}>Projects</Title>
+        <Button component={Link} to="/projects/new">
+          Create Project
+        </Button>
+      </Group>
+
+      <TextInput
+        placeholder="Search projects..."
+        mb="xl"
+        icon={<IconSearch size={14} />}
+        value={searchQuery}
+        onChange={(event) => setSearchQuery(event.currentTarget.value)}
+      />
+
+      <SimpleGrid
+        cols={3}
+        spacing="lg"
+        breakpoints={[{ maxWidth: 'sm', cols: 1 }]}
+      >
+        {filteredProjects?.map((project) => (
+          <Card shadow="sm" p="lg" radius="md" withBorder key={project.id}>
+            <Group justify="space-between" mt="md" mb="xs">
+              <Text fw={500} component={Link} to={`/projects/${project.id}`}>
+                {project.name}
+              </Text>
+              <Group gap="xs">
+                <ActionIcon
+                  component={Link}
+                  to={`/projects/${project.id}/edit`}
+                  variant="default"
+                >
+                  <IconPencil size={16} />
+                </ActionIcon>
+                <ActionIcon
+                  color="red"
+                  variant="default"
+                  onClick={() => openDeleteModal(project.id)}
+                >
+                  <IconTrash size={16} />
+                </ActionIcon>
+              </Group>
+            </Group>
+
+            <Text size="sm" c="dimmed">
+              {project.description}
+            </Text>
+          </Card>
+        ))}
+      </SimpleGrid>
+
+      <Modal
+        opened={deleteModalOpened}
+        onClose={() => setDeleteModalOpened(false)}
+        title="Confirm Deletion"
+      >
+        <Text>
+          Are you sure you want to delete this project? This action cannot be
+          undone.
+        </Text>
+        <Group position="right" mt="md">
+          <Button variant="default" onClick={() => setDeleteModalOpened(false)}>
+            Cancel
+          </Button>
+          <Button
+            color="red"
+            onClick={handleDelete}
+            loading={deleteMutation.isPending}
+          >
+            Delete
+          </Button>
+        </Group>
+      </Modal>
+    </div>
+  );
+}
