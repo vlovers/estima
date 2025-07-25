@@ -7,6 +7,7 @@ import {
   ManyToOne,
 } from 'typeorm';
 import { User } from '../../users/entities/user.entity';
+import { ProjectComplexity } from './project-complexity.enum';
 
 @Entity({ name: 'projects' })
 export class Project {
@@ -18,6 +19,16 @@ export class Project {
 
   @Column('text', { nullable: true })
   description: string;
+
+  @Column({
+    type: 'enum',
+    enum: ProjectComplexity,
+    default: ProjectComplexity.MEDIUM,
+  })
+  complexity: ProjectComplexity;
+
+  @Column({ type: 'float', default: 0 })
+  overhead: number; // Percentage
 
   @OneToMany(() => Task, (task) => task.project, { cascade: true })
   tasks: Task[];

@@ -2,12 +2,12 @@ import { EstimateFeedbackModule } from './modules/estimate-feedback/estimate-fee
 import { AiEstimatorModule } from './modules/ai-estimator/ai-estimator.module';
 import { EstimatesModule } from './modules/estimates/estimates.module';
 import { ProjectsModule } from './modules/projects/projects.module';
+import { ConfigModule, ConfigService } from '@nestjs/config';
 import { UsersModule } from './modules/users/users.module';
 import { TasksModule } from './modules/tasks/tasks.module';
-import { TypeOrmModule } from '@nestjs/typeorm';
-import { ConfigModule, ConfigService } from '@nestjs/config';
-import { Module } from '@nestjs/common';
 import { AuthModule } from './modules/auth/auth.module';
+import { TypeOrmModule } from '@nestjs/typeorm';
+import { Module } from '@nestjs/common';
 
 @Module({
   imports: [
@@ -25,7 +25,7 @@ import { AuthModule } from './modules/auth/auth.module';
         database: configService.get<string>('POSTGRES_DB'),
         autoLoadEntities: true,
         synchronize: true,
-        dropSchema: true, // This will wipe the database on every restart
+        dropSchema: false,
       }),
       inject: [ConfigService],
     }),

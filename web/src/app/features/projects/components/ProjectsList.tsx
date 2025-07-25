@@ -1,29 +1,24 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { IconSearch, IconPencil, IconTrash } from '@tabler/icons-react';
+import { Link, useNavigate } from 'react-router-dom';
+import { notifications } from '@mantine/notifications';
+import { api } from '../../../services/authApiService';
+import { useState, useEffect } from 'react';
+import { Project } from '../../../types';
+
 import {
-  Loader,
-  Alert,
-  Title,
-  Button,
-  Group,
-  Card,
-  Text,
   SimpleGrid,
   ActionIcon,
-  Modal,
   TextInput,
+  Loader,
+  Button,
+  Group,
+  Modal,
+  Text,
+  Alert,
+  Card,
+  Title,
 } from '@mantine/core';
-import { Link, useNavigate } from 'react-router-dom';
-import { IconPencil, IconTrash, IconSearch } from '@tabler/icons-react';
-import { useState, useEffect } from 'react';
-import { notifications } from '@mantine/notifications';
-import { api } from '../services/authApiService';
-
-// Define the type for a single project based on your API
-interface Project {
-  id: string;
-  name: string;
-  description: string;
-}
 
 // API functions
 const fetchProjects = async (): Promise<Project[]> => {
@@ -109,7 +104,7 @@ export function ProjectsList() {
 
   return (
     <div>
-      <Group position="apart" mb="xl">
+      <Group justify="space-between" mb="xl">
         <Title order={2}>Projects</Title>
         <Button component={Link} to="/projects/new">
           Create Project
@@ -119,43 +114,49 @@ export function ProjectsList() {
       <TextInput
         placeholder="Search projects..."
         mb="xl"
-        icon={<IconSearch size={14} />}
         value={searchQuery}
         onChange={(event) => setSearchQuery(event.currentTarget.value)}
+        rightSection={<IconSearch size={14} />}
       />
 
-      <SimpleGrid
-        cols={3}
-        spacing="lg"
-        breakpoints={[{ maxWidth: 'sm', cols: 1 }]}
-      >
+      <SimpleGrid cols={3} spacing="lg">
         {filteredProjects?.map((project) => (
           <Card shadow="sm" p="lg" radius="md" withBorder key={project.id}>
             <Group justify="space-between" mt="md" mb="xs">
-              <Text fw={500} component={Link} to={`/projects/${project.id}`}>
-                {project.name}
-              </Text>
-              <Group gap="xs">
-                <ActionIcon
-                  component={Link}
-                  to={`/projects/${project.id}/edit`}
-                  variant="default"
-                >
-                  <IconPencil size={16} />
-                </ActionIcon>
-                <ActionIcon
-                  color="red"
-                  variant="default"
-                  onClick={() => openDeleteModal(project.id)}
-                >
-                  <IconTrash size={16} />
-                </ActionIcon>
-              </Group>
+              <Text fw={500}>{project.name}</Text>
             </Group>
 
             <Text size="sm" c="dimmed">
               {project.description}
             </Text>
+
+            <Group justify="flex-end" mt="md">
+              <ActionIcon
+                variant="light"
+                component={Link}
+                to={`/projects/${project.id}/edit`}
+              >
+                <IconPencil size={16} />
+              </ActionIcon>
+              <ActionIcon
+                variant="light"
+                color="red"
+                onClick={() => openDeleteModal(project.id)}
+              >
+                <IconTrash size={16} />
+              </ActionIcon>
+              <Button
+                variant="light"
+                color="blue"
+                fullWidth
+                mt="md"
+                radius="md"
+                component={Link}
+                to={`/projects/${project.id}`}
+              >
+                View Details
+              </Button>
+            </Group>
           </Card>
         ))}
       </SimpleGrid>
@@ -165,11 +166,8 @@ export function ProjectsList() {
         onClose={() => setDeleteModalOpened(false)}
         title="Confirm Deletion"
       >
-        <Text>
-          Are you sure you want to delete this project? This action cannot be
-          undone.
-        </Text>
-        <Group position="right" mt="md">
+        <Text>Are you sure you want to delete this project?</Text>
+        <Group justify="flex-end" mt="md">
           <Button variant="default" onClick={() => setDeleteModalOpened(false)}>
             Cancel
           </Button>

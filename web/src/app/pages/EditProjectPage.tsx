@@ -1,19 +1,23 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { api } from '../services/authApiService';
+import { ProjectForm } from '../features/projects/components/ProjectForm';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ProjectForm } from '../components/ProjectForm';
-import { Loader, Alert } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
+import { api } from '../services/authApiService';
+import { Loader, Alert } from '@mantine/core';
 
 interface Project {
   id: string;
   name: string;
   description: string;
+  complexity: 'LOW' | 'MEDIUM' | 'HIGH';
+  overhead: number;
 }
 
 interface UpdateProjectDto {
   name: string;
   description: string;
+  complexity: 'LOW' | 'MEDIUM' | 'HIGH';
+  overhead: number;
 }
 
 const fetchProject = async (id: string): Promise<Project> => {
@@ -24,7 +28,7 @@ const fetchProject = async (id: string): Promise<Project> => {
 const updateProject = async ({
   id,
   ...data
-}: UpdateProjectDto & { id: string }) => {
+}: UpdateProjectDto & { id: string }): Promise<Project> => {
   const { data: response } = await api.patch(`/projects/${id}`, data);
   return response;
 };
@@ -45,7 +49,11 @@ export function EditProjectPage() {
     enabled: !!id,
   });
 
-  const mutation = useMutation<any, Error, UpdateProjectDto & { id: string }>({
+  const mutation = useMutation<
+    Project,
+    Error,
+    UpdateProjectDto & { id: string }
+  >({
     mutationFn: updateProject,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['projects'] });
@@ -82,6 +90,8 @@ export function EditProjectPage() {
       initialValues={{
         name: project?.name || '',
         description: project?.description || '',
+        complexity: project?.complexity || 'MEDIUM',
+        overhead: project?.overhead || 0,
       }}
     />
   );

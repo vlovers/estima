@@ -28,4 +28,20 @@ export default defineConfig(() => ({
       transformMixedEsModules: true,
     },
   },
+  test: {
+    globals: true,
+    environment: 'jsdom',
+    include: ['src/**/*.spec.{ts,tsx}'],
+    testTimeout: 30000,
+    reporters: ['default', 'verbose'],
+    deps: {
+      optimizer: {
+        web: {
+          include: ['vitest-canvas-mock'],
+        },
+      },
+    },
+    setupFiles: ['./src/test-setup.ts'],
+    plugins: [nxViteTsPaths()],
+  },
 }));

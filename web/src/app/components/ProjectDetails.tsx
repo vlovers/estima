@@ -1,487 +1,198 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { ManualEstimateForm } from '../features/tasks/components/ManualEstimateForm';
+import { CreateTaskForm } from '../features/tasks/components/CreateTaskForm';
+import { ProjectHeader } from '../features/projects/components/ProjectHeader';
+import { FeedbackForm } from '../features/tasks/components/FeedbackForm';
+import { EditTaskForm } from '../features/tasks/components/EditTaskForm';
+import { useFetchProject } from '../features/projects/hooks/projects.hooks';
+import { ProjectStats } from '../features/projects/components/ProjectStats';
+import { TaskFilters } from '../features/tasks/components/TaskFilters';
+import { TaskList } from '../features/tasks/components/TaskList';
+import { useDisclosure } from '@mantine/hooks';
 import { useParams } from 'react-router-dom';
+import { useState, useMemo } from 'react';
+import { Task } from '../types';
+
 import {
-  Loader,
-  Alert,
-  Title,
-  Paper,
-  Text,
-  Card,
-  SimpleGrid,
-  Badge,
-  Group,
-  Button,
+  useCreateManualEstimateMutation,
+  useCreateFeedbackMutation,
+  useDeleteTaskMutation,
+} from '../features/tasks/hooks/tasks.hooks';
+
+import {
   Collapse,
-  ActionIcon,
-  Menu,
+  Loader,
+  Divider,
+  Button,
   Modal,
-  TextInput,
-  SegmentedControl,
-  MultiSelect,
+  Group,
   Stack,
-  Grid,
+  Tabs,
+  Text,
+  Title,
 } from '@mantine/core';
-import { CreateTaskForm } from './CreateTaskForm';
-import { useMemo, useState } from 'react';
-import {
-  IconPencil,
-  IconTrash,
-  IconSearch,
-  IconDotsVertical,
-  IconListNumbers,
-  IconLoader,
-  IconCircleCheck,
-  IconClock,
-} from '@tabler/icons-react';
-import { EditTaskForm } from './EditTaskForm';
-import { notifications } from '@mantine/notifications';
-import { api } from '../services/authApiService';
 
-// Enums and Types
-export enum TaskStatus {
-  TO_DO = 'TO_DO',
-  IN_PROGRESS = 'IN_PROGRESS',
-  DONE = 'DONE',
-}
+// Helper function to filter tasks based on search, and tags
+const filterTasks = (
+  tasks: Task[],
+  searchQuery: string,
+  tagsFilter: string[]
+): Task[] => {
+  const lowercasedQuery = searchQuery.toLowerCase();
 
-interface Estimate {
-  id: string;
-  finalEstimate: number;
-  explanation: string | null;
-}
+  const matches = (task: Task) => {
+    const searchMatch =
+      task.title.toLowerCase().includes(lowercasedQuery) ||
+      task.description.toLowerCase().includes(lowercasedQuery);
+    const tagsMatch =
+      tagsFilter.length === 0 ||
+      tagsFilter.every((tag) => task.tags.includes(tag));
+    return searchMatch && tagsMatch;
+  };
 
-interface Task {
-  id: string;
-  title: string;
-  description: string;
-  technology: string;
-  experienceLevel: string;
-  tags: string[];
-  status: TaskStatus;
-  estimates: Estimate[];
-}
+  const recursiveFilter = (task: Task): Task | null => {
+    const children = (task.children || [])
+      .map(recursiveFilter)
+      .filter(Boolean) as Task[];
 
-interface Project {
-  id: string;
-  name: string;
-  description: string;
-  tasks: Task[];
-}
+    if (matches(task) || children.length > 0) {
+      return { ...task, children };
+    }
 
-// API Functions
-const fetchProject = async (id: string): Promise<Project> => {
-  const { data } = await api.get(`/projects/${id}`);
-  return data;
-};
+    return null;
+  };
 
-const deleteTask = async (id: string): Promise<void> => {
-  await api.delete(`/tasks/${id}`);
-};
-
-const updateTaskStatus = async ({
-  id,
-  status,
-}: {
-  id: string;
-  status: TaskStatus;
-}): Promise<Task> => {
-  const { data } = await api.patch(`/tasks/${id}`, { status });
-  return data;
-};
-
-const statusColors: Record<TaskStatus, string> = {
-  [TaskStatus.TO_DO]: 'gray',
-  [TaskStatus.IN_PROGRESS]: 'blue',
-  [TaskStatus.DONE]: 'green',
+  return tasks.map(recursiveFilter).filter(Boolean) as Task[];
 };
 
 export function ProjectDetails() {
   const { id } = useParams<{ id: string }>();
-  const queryClient = useQueryClient();
-  const [formOpened, setFormOpened] = useState(false);
-  const [deleteModalOpened, setDeleteModalOpened] = useState(false);
-  const [editModalOpened, setEditModalOpened] = useState(false);
+
+  // State Management
+  const [activeTab, setActiveTab] = useState('tasks');
+  const [formOpened, { toggle: toggleForm }] = useDisclosure(false);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
-  const [taskSearchQuery, setTaskSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState<string | TaskStatus>('ALL');
+  const [searchQuery, setSearchQuery] = useState('');
   const [tagsFilter, setTagsFilter] = useState<string[]>([]);
 
-  const {
-    data: project,
-    isLoading,
-    isError,
-    error,
-  } = useQuery<Project, Error>({
-    queryKey: ['project', id],
-    queryFn: () => fetchProject(id!),
-    enabled: !!id,
-  });
+  // Modals State
+  const [editModalOpened, { open: openEditModal, close: closeEditModal }] =
+    useDisclosure(false);
+  const [
+    deleteModalOpened,
+    { open: openDeleteModal, close: closeDeleteModal },
+  ] = useDisclosure(false);
+  const [
+    feedbackModalOpened,
+    { open: openFeedbackModal, close: closeFeedbackModal },
+  ] = useDisclosure(false);
+  const [
+    manualEstimateModalOpened,
+    { open: openManualEstimateModal, close: closeManualEstimateModal },
+  ] = useDisclosure(false);
 
-  const deleteMutation = useMutation<void, Error, string>({
-    mutationFn: deleteTask,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['project', id] });
-      setDeleteModalOpened(false);
-      notifications.show({
-        title: 'Task Deleted',
-        message: 'The task has been successfully deleted.',
-        color: 'green',
-      });
-    },
-    onError: (error) => {
-      notifications.show({
-        title: 'Deletion Failed',
-        message: error.message,
-        color: 'red',
-      });
-    },
-  });
+  // Data Fetching
+  const { data: project, isLoading, isError, error } = useFetchProject(id!);
 
-  const statusMutation = useMutation<
-    Task,
-    Error,
-    { id: string; status: TaskStatus }
-  >({
-    mutationFn: updateTaskStatus,
-    onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ['project', id] });
-      notifications.show({
-        title: 'Status Updated',
-        message: `Task "${data.title}" is now ${data.status.replace(
-          '_',
-          ' '
-        )}. `,
-        color: 'blue',
-      });
-    },
-    onError: (error) => {
-      notifications.show({
-        title: 'Status Update Failed',
-        message: error.message,
-        color: 'red',
-      });
-    },
-  });
+  // Mutations
+  const deleteMutation = useDeleteTaskMutation(project?.id || '');
+  const feedbackMutation = useCreateFeedbackMutation(project?.id || '');
+  const manualEstimateMutation = useCreateManualEstimateMutation(
+    project?.id || ''
+  );
 
-  const openDeleteModal = (task: Task) => {
-    setSelectedTask(task);
-    setDeleteModalOpened(true);
-  };
-
-  const openEditModal = (task: Task) => {
-    setSelectedTask(task);
-    setEditModalOpened(true);
-  };
-
-  const handleDeleteConfirm = () => {
-    if (selectedTask) {
-      deleteMutation.mutate(selectedTask.id);
-    }
-  };
-
+  // Memoized Data
   const allTags = useMemo(() => {
     if (!project?.tasks) return [];
-    const tagsSet = new Set<string>();
-    project.tasks.forEach((task) =>
-      task.tags.forEach((tag) => tagsSet.add(tag))
-    );
-    return Array.from(tagsSet);
+    const tags = new Set<string>();
+    project.tasks.forEach((task) => task.tags.forEach((tag) => tags.add(tag)));
+    return Array.from(tags);
   }, [project?.tasks]);
 
   const filteredTasks = useMemo(() => {
     if (!project?.tasks) return [];
-    return project.tasks.filter((task) => {
-      const searchMatch = task.title
-        .toLowerCase()
-        .includes(taskSearchQuery.toLowerCase());
-      const statusMatch =
-        statusFilter === 'ALL' || task.status === statusFilter;
-      const tagsMatch =
-        tagsFilter.length === 0 ||
-        tagsFilter.every((tag) => task.tags.includes(tag));
-      return searchMatch && statusMatch && tagsMatch;
-    });
-  }, [project?.tasks, taskSearchQuery, statusFilter, tagsFilter]);
+    return filterTasks(project.tasks, searchQuery, tagsFilter);
+  }, [project?.tasks, searchQuery, tagsFilter]);
 
-  const stats = useMemo(() => {
-    if (!project) {
-      return {
-        totalTasks: 0,
-        todoTasks: 0,
-        inProgressTasks: 0,
-        doneTasks: 0,
-        totalHours: 0,
-      };
+  // Handlers
+  const handleEditClick = (task: Task) => {
+    setSelectedTask(task);
+    openEditModal();
+  };
+
+  const handleDeleteClick = (task: Task) => {
+    setSelectedTask(task);
+    openDeleteModal();
+  };
+
+  const handleFeedbackClick = (task: Task) => {
+    setSelectedTask(task);
+    openFeedbackModal();
+  };
+
+  const handleManualEstimateClick = (task: Task) => {
+    setSelectedTask(task);
+    openManualEstimateModal();
+  };
+
+  const handleDeleteConfirm = () => {
+    if (selectedTask) {
+      deleteMutation.mutate(selectedTask.id, {
+        onSuccess: closeDeleteModal,
+      });
     }
-    const totalTasks = project.tasks.length;
-    const todoTasks = project.tasks.filter(
-      (t) => t.status === TaskStatus.TO_DO
-    ).length;
-    const inProgressTasks = project.tasks.filter(
-      (t) => t.status === TaskStatus.IN_PROGRESS
-    ).length;
-    const doneTasks = project.tasks.filter(
-      (t) => t.status === TaskStatus.DONE
-    ).length;
-    const totalHours = project.tasks
-      .flatMap((t) => t.estimates)
-      .reduce((acc, est) => acc + (est.finalEstimate || 0), 0);
-
-    return { totalTasks, todoTasks, inProgressTasks, doneTasks, totalHours };
-  }, [project]);
+  };
 
   if (isLoading) return <Loader />;
-  if (isError)
-    return (
-      <Alert color="red" title="Error">
-        {error.message}
-      </Alert>
-    );
-  if (!project)
-    return (
-      <Alert color="yellow" title="Not Found">
-        Project not found.
-      </Alert>
-    );
+  if (isError) return <Text c="red">Error: {error.message}</Text>;
+  if (!project) return <Text>Project not found.</Text>;
 
   return (
     <Stack>
-      <Card withBorder radius="md" p="lg">
-        <Group justify="space-between">
-          <div>
-            <Title order={2}>{project.name}</Title>
-            <Text mt="sm" c="dimmed">
-              {project.description}
-            </Text>
-          </div>
-          <Button onClick={() => setFormOpened((o) => !o)}>Add New Task</Button>
-        </Group>
-      </Card>
+      <ProjectHeader project={project} onAddTaskClick={toggleForm} />
+
+      <Divider my="md" />
 
       <Collapse in={formOpened}>
-        <CreateTaskForm
-          projectId={project.id}
-          onSuccess={() => setFormOpened(false)}
-        />
+        <CreateTaskForm projectId={project.id} onSuccess={toggleForm} />
       </Collapse>
 
       <Title order={3} mt="xl">
         Project Stats
       </Title>
-      <Grid>
-        <Grid.Col span={{ base: 12, md: 6, lg: 3 }}>
-          <Card withBorder radius="md" p="sm">
-            <Group>
-              <IconListNumbers size={28} />
-              <div>
-                <Text c="dimmed" size="xs">
-                  Total Tasks
-                </Text>
-                <Text fw={700} size="xl">
-                  {stats.totalTasks}
-                </Text>
-              </div>
-            </Group>
-          </Card>
-        </Grid.Col>
-        <Grid.Col span={{ base: 12, md: 6, lg: 2 }}>
-          <Card withBorder radius="md" p="sm">
-            <Group>
-              <IconLoader size={28} />
-              <div>
-                <Text c="dimmed" size="xs">
-                  To Do
-                </Text>
-                <Text fw={700} size="xl">
-                  {stats.todoTasks}
-                </Text>
-              </div>
-            </Group>
-          </Card>
-        </Grid.Col>
-        <Grid.Col span={{ base: 12, md: 6, lg: 2 }}>
-          <Card withBorder radius="md" p="sm">
-            <Group>
-              <IconLoader size={28} color="blue" />
-              <div>
-                <Text c="dimmed" size="xs">
-                  In Progress
-                </Text>
-                <Text fw={700} size="xl">
-                  {stats.inProgressTasks}
-                </Text>
-              </div>
-            </Group>
-          </Card>
-        </Grid.Col>
-        <Grid.Col span={{ base: 12, md: 6, lg: 2 }}>
-          <Card withBorder radius="md" p="sm">
-            <Group>
-              <IconCircleCheck size={28} color="green" />
-              <div>
-                <Text c="dimmed" size="xs">
-                  Done
-                </Text>
-                <Text fw={700} size="xl">
-                  {stats.doneTasks}
-                </Text>
-              </div>
-            </Group>
-          </Card>
-        </Grid.Col>
-        <Grid.Col span={{ base: 12, md: 6, lg: 3 }}>
-          <Card withBorder radius="md" p="sm">
-            <Group>
-              <IconClock size={28} />
-              <div>
-                <Text c="dimmed" size="xs">
-                  Total Hours
-                </Text>
-                <Text fw={700} size="xl">
-                  {stats.totalHours}
-                </Text>
-              </div>
-            </Group>
-          </Card>
-        </Grid.Col>
-      </Grid>
+      <ProjectStats project={project} />
 
-      <Title order={3} mt="xl" mb="md">
-        Tasks
-      </Title>
-
-      <Paper p="md" withBorder mb="lg" radius="md">
-        <Stack>
-          <TextInput
-            placeholder="Search tasks by title..."
-            leftSection={<IconSearch size={14} />}
-            value={taskSearchQuery}
-            onChange={(e) => setTaskSearchQuery(e.currentTarget.value)}
-          />
-          <Group grow>
-            <SegmentedControl
-              value={statusFilter}
-              onChange={setStatusFilter}
-              data={[
-                { label: 'All', value: 'ALL' },
-                { label: 'To Do', value: TaskStatus.TO_DO },
-                { label: 'In Progress', value: TaskStatus.IN_PROGRESS },
-                { label: 'Done', value: TaskStatus.DONE },
-              ]}
-            />
-            <MultiSelect
-              data={allTags}
-              value={tagsFilter}
-              onChange={setTagsFilter}
-              placeholder="Filter by tags"
-              clearable
-            />
-          </Group>
-        </Stack>
-      </Paper>
-
-      <SimpleGrid
-        cols={3}
-        spacing="lg"
-        breakpoints={[{ maxWidth: 'sm', cols: 1 }]}
+      <Tabs
+        value={activeTab}
+        onChange={(value) => setActiveTab(value || 'tasks')}
       >
-        {filteredTasks.map((task) => (
-          <Card shadow="sm" p="lg" radius="md" withBorder key={task.id}>
-            <Group position="apart" mb="xs">
-              <Title order={4}>{task.title}</Title>
-              <Menu shadow="md" width={200}>
-                <Menu.Target>
-                  <Badge
-                    color={statusColors[task.status]}
-                    style={{ cursor: 'pointer' }}
-                  >
-                    {task.status.replace('_', ' ')}
-                  </Badge>
-                </Menu.Target>
-                <Menu.Dropdown>
-                  <Menu.Label>Change Status</Menu.Label>
-                  {Object.values(TaskStatus).map((status) => (
-                    <Menu.Item
-                      key={status}
-                      onClick={() =>
-                        statusMutation.mutate({ id: task.id, status })
-                      }
-                    >
-                      {status.replace('_', ' ')}
-                    </Menu.Item>
-                  ))}
-                </Menu.Dropdown>
-              </Menu>
-            </Group>
+        <Tabs.List>
+          <Tabs.Tab value="tasks">Tasks</Tabs.Tab>
+        </Tabs.List>
 
-            <Group position="apart" mt="xs">
-              <Badge
-                color={
-                  task.experienceLevel === 'SENIOR'
-                    ? 'red'
-                    : task.experienceLevel === 'MIDDLE'
-                    ? 'yellow'
-                    : 'green'
-                }
-              >
-                {task.experienceLevel}
-              </Badge>
-              <Group spacing="xs">
-                <ActionIcon
-                  variant="default"
-                  size="sm"
-                  onClick={() => openEditModal(task)}
-                >
-                  <IconPencil size={14} />
-                </ActionIcon>
-                <ActionIcon
-                  variant="default"
-                  color="red"
-                  size="sm"
-                  onClick={() => openDeleteModal(task)}
-                >
-                  <IconTrash size={14} />
-                </ActionIcon>
-              </Group>
-            </Group>
+        <Tabs.Panel value="tasks" pt="xs">
+          <Stack>
+            <TaskFilters
+              searchQuery={searchQuery}
+              setSearchQuery={setSearchQuery}
+              tagsFilter={tagsFilter}
+              setTagsFilter={setTagsFilter}
+              allTags={allTags}
+            />
+            <TaskList
+              tasks={filteredTasks}
+              onEdit={handleEditClick}
+              onDelete={handleDeleteClick}
+              onFeedback={handleFeedbackClick}
+              onManualEstimate={handleManualEstimateClick}
+            />
+          </Stack>
+        </Tabs.Panel>
+      </Tabs>
 
-            <Text size="sm" c="dimmed" mt="md">
-              {task.description}
-            </Text>
-
-            <Text size="sm" fw={500} mt="md">
-              Technology:
-            </Text>
-            <Text size="sm">{task.technology}</Text>
-
-            <Text size="sm" fw={500} mt="md">
-              Tags:
-            </Text>
-            <Group mt="xs">
-              {task.tags.map((tag) => (
-                <Badge key={tag} variant="outline">
-                  {tag}
-                </Badge>
-              ))}
-            </Group>
-
-            <Text size="sm" fw={500} mt="md">
-              AI Estimates:
-            </Text>
-            <Group mt="xs">
-              {task.estimates.map((est) => (
-                <Badge key={est.id} variant="light">
-                  {est.finalEstimate} hours
-                </Badge>
-              ))}
-            </Group>
-          </Card>
-        ))}
-      </SimpleGrid>
-
+      {/* Modals */}
       <Modal
         opened={deleteModalOpened}
-        onClose={() => setDeleteModalOpened(false)}
+        onClose={closeDeleteModal}
         title="Confirm Deletion"
         size="sm"
       >
@@ -489,8 +200,8 @@ export function ProjectDetails() {
           Are you sure you want to delete this task? This action cannot be
           undone.
         </Text>
-        <Group position="right" mt="xl">
-          <Button variant="default" onClick={() => setDeleteModalOpened(false)}>
+        <Group justify="flex-end" mt="xl">
+          <Button variant="default" onClick={closeDeleteModal}>
             Cancel
           </Button>
           <Button
@@ -505,14 +216,45 @@ export function ProjectDetails() {
 
       <Modal
         opened={editModalOpened}
-        onClose={() => setEditModalOpened(false)}
+        onClose={closeEditModal}
         title="Edit Task"
+        size="lg"
       >
         {selectedTask && (
-          <EditTaskForm
-            task={selectedTask}
-            projectId={project.id}
-            onSuccess={() => setEditModalOpened(false)}
+          <EditTaskForm task={selectedTask} onSuccess={closeEditModal} />
+        )}
+      </Modal>
+
+      <Modal
+        opened={feedbackModalOpened}
+        onClose={closeFeedbackModal}
+        title="Add Feedback"
+      >
+        {selectedTask && (
+          <FeedbackForm
+            taskId={selectedTask.id}
+            onSubmit={(data) =>
+              feedbackMutation.mutate(data, { onSuccess: closeFeedbackModal })
+            }
+            isLoading={feedbackMutation.isPending}
+          />
+        )}
+      </Modal>
+
+      <Modal
+        opened={manualEstimateModalOpened}
+        onClose={closeManualEstimateModal}
+        title="Set Manual Estimate"
+      >
+        {selectedTask && (
+          <ManualEstimateForm
+            taskId={selectedTask.id}
+            onSubmit={(data) =>
+              manualEstimateMutation.mutate(data, {
+                onSuccess: closeManualEstimateModal,
+              })
+            }
+            isLoading={manualEstimateMutation.isPending}
           />
         )}
       </Modal>

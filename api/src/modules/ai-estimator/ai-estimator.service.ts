@@ -1,5 +1,6 @@
 import { EstimateSource } from '../estimates/entities/estimate.entity';
 import { CreateTaskDto } from '../tasks/dto/create-task.dto';
+import { Project } from '../projects/entities/project.entity';
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Task } from '../tasks/entities/task.entity';
@@ -29,18 +30,21 @@ export class AiEstimatorService {
     });
   }
 
-  async estimateTask(taskDto: CreateTaskDto): Promise<EstimateDto> {
+  async estimateTask(
+    taskDto: CreateTaskDto,
+    project: Project
+  ): Promise<EstimateDto> {
     const model = this.configService.get<string>('OPENAI_MODEL', 'gpt-4-turbo');
 
     const explanationLog: string[] = [];
 
     // 1. Top-down
-    const topDownPrompt = this.buildPrompt(taskDto);
+    const topDownPrompt = this.buildPrompt(taskDto, project);
     const topDown = await this.requestEstimateOnly(topDownPrompt, model);
     explanationLog.push(`Top-down: ${topDown}h`);
 
     // 2. Breakdown
-    const subtasks = await this.breakdownTask(taskDto);
+    const subtasks = await this.breakdownTask(taskDto, project);
     const bottomUp = subtasks.reduce((s, t) => s + t.estimateHours, 0);
     explanationLog.push(`Bottom-up (subtasks sum): ${bottomUp}h`);
 
@@ -49,7 +53,12 @@ export class AiEstimatorService {
     explanationLog.push(`Corrected by feedback: ${corrected.toFixed(1)}h`);
 
     // 4. Modifiers
-    const adjusted = this.applyModifiers(corrected, taskDto, explanationLog);
+    const adjusted = this.applyModifiers(
+      corrected,
+      taskDto,
+      project,
+      explanationLog
+    );
 
     // 5. Mismatch check
     const divergence = Math.abs(topDown - bottomUp);
@@ -90,9 +99,20 @@ export class AiEstimatorService {
   private applyModifiers(
     original: number,
     taskDto: CreateTaskDto,
+    project: Project,
     log: string[]
   ): number {
     let multiplier = 1;
+
+    // Project complexity
+    switch (project.complexity) {
+      case 'LOW':
+        multiplier *= 0.8;
+        break;
+      case 'HIGH':
+        multiplier *= 1.25;
+        break;
+    }
 
     switch (taskDto.experienceLevel.toLowerCase()) {
       case 'junior':
@@ -111,6 +131,14 @@ export class AiEstimatorService {
 
     const adjusted = original * multiplier;
     log.push(`Modifier x${multiplier.toFixed(2)} → ${adjusted.toFixed(1)}h`);
+
+    // Overhead
+    if (project.overhead > 0) {
+      const withOverhead = adjusted * (1 + project.overhead / 100);
+      log.push(`Overhead +${project.overhead}% → ${withOverhead.toFixed(1)}h`);
+      return withOverhead;
+    }
+
     return adjusted;
   }
 
@@ -120,8 +148,11 @@ export class AiEstimatorService {
     return parseFloat(val.toFixed(1));
   }
 
-  async breakdownTask(taskDto: CreateTaskDto): Promise<Subtask[]> {
-    const prompt = this.buildBreakdownPrompt(taskDto);
+  async breakdownTask(
+    taskDto: CreateTaskDto,
+    project: Project
+  ): Promise<Subtask[]> {
+    const prompt = this.buildBreakdownPrompt(taskDto, project);
     const model = this.configService.get<string>('OPENAI_MODEL', 'gpt-4-turbo');
 
     this.logger.log(`Sending breakdown request to ${model}...`);
@@ -203,8 +234,8 @@ export class AiEstimatorService {
     return Math.max(0.5, correctedEstimate);
   }
 
-  private parseEstimate(responseText: string): number {
-    const text = responseText.toLowerCase();
+  private parseEstimate(content: string): number {
+    const text = content.toLowerCase();
     const numbers = text.match(/\d+(\.\d+)?/g);
 
     if (!numbers) {
@@ -232,65 +263,55 @@ export class AiEstimatorService {
     return 0.9;
   }
 
-  private buildPrompt(taskDto: CreateTaskDto): string {
+  private buildPrompt(taskDto: CreateTaskDto, project: Project): string {
     return `
-You are a software project estimation assistant.
+      You are an expert software engineer specializing in effort estimation.
+      Your task is to estimate the number of hours required to complete a task.
 
-Estimate how many **working hours** it would take for a developer with the following experience to complete this task.
+      Project Context:
+      - Complexity: ${project.complexity}
 
-Requirements:
-- Only return a single **number** in your answer (e.g., "12").
-- The number should be **in hours**, assuming an 8-hour workday.
-- Do NOT explain your reasoning.
-- Do NOT include any units (no "hours", "hrs", etc).
-- Do NOT return a range.
+      Task Details:
+      - Title: ${taskDto.title}
+      - Description: ${taskDto.description}
+      - Technology: ${taskDto.technology}
+      - Developer Experience: ${taskDto.experienceLevel}
 
-Context:
-Task Title: ${taskDto.title}
-Description: ${taskDto.description}
-Technology Stack: ${taskDto.technology}
-Experience Level: ${taskDto.experienceLevel}
-
-Answer:
-`;
+      Based on these details, provide a single, numeric estimate of the hours required.
+      Do not add any text, just the number.
+      Example: 8.5
+    `;
   }
 
-  private buildBreakdownPrompt(taskDto: CreateTaskDto): string {
+  private buildBreakdownPrompt(
+    taskDto: CreateTaskDto,
+    project: Project
+  ): string {
     return `
-You are a senior software engineer helping to break down development tasks.
+      You are an expert software engineer. Your task is to break down a larger task into smaller, manageable subtasks and estimate each one.
 
-Break down the task below into smaller, well-defined subtasks. Each subtask should:
-- Have a clear title
-- Include a short description (1-2 sentences)
-- Include a numeric estimate in **hours** (no ranges, no decimals >1 digit)
+      Project Context:
+      - Complexity: ${project.complexity}
 
-⚠️ IMPORTANT:
-- Return only a **valid JSON object**.
-- The JSON must have a single key "subtasks", which maps to an **array** of objects.
-- Each object must have exactly 3 fields: "title" (string), "description" (string), and "estimateHours" (number).
-- Only return the JSON — **no commentary, no explanation**.
+      Main Task Details:
+      - Title: ${taskDto.title}
+      - Description: ${taskDto.description}
+      - Technology: ${taskDto.technology}
+      - Developer Experience: ${taskDto.experienceLevel}
 
-Context:
-Task Title: ${taskDto.title}
-Description: ${taskDto.description}
-Technology Stack: ${taskDto.technology}
-Experience Level: ${taskDto.experienceLevel}
+      Instructions:
+      1. Analyze the main task and identify 3-5 key subtasks required for completion.
+      2. For each subtask, provide a clear title, a brief description (1-2 sentences), and an estimated number of hours.
+      3. Return the result as a JSON object with a single key "subtasks", which is an array of objects. Each object should have "title", "description", and "estimateHours" (numeric) fields.
 
-Return format example:
-{
-  "subtasks": [
-    {
-      "title": "Set up project structure",
-      "description": "Initialize the project with required folders and dependencies.",
-      "estimateHours": 2
-    },
-    {
-      "title": "Implement authentication logic",
-      "description": "Build login and registration logic with JWT support.",
-      "estimateHours": 5
-    }
-  ]
-}
-`;
+      Example JSON Output:
+      {
+        "subtasks": [
+          { "title": "Set up database schema", "description": "Create tables and relationships for the new feature.", "estimateHours": 4 },
+          { "title": "Build API endpoints", "description": "Develop CRUD endpoints for the feature.", "estimateHours": 6.5 },
+          { "title": "Implement frontend UI", "description": "Create the user interface components.", "estimateHours": 8 }
+        ]
+      }
+    `;
   }
 }

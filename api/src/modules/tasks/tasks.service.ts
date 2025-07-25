@@ -1,18 +1,19 @@
 import { AiEstimatorService } from '../ai-estimator/ai-estimator.service';
 import { EstimateSource } from '../estimates/entities/estimate.entity';
 import { EstimatesService } from '../estimates/estimates.service';
+import { ProjectsService } from '../projects/projects.service';
+import { Project } from '../projects/entities/project.entity';
 import { UpdateTaskDto } from './dto/update-task.dto';
 import { CreateTaskDto } from './dto/create-task.dto';
 import { InjectRepository } from '@nestjs/typeorm';
-import {
-  Injectable,
-  NotFoundException,
-  ForbiddenException,
-} from '@nestjs/common';
 import { Task } from './entities/task.entity';
 import { Repository } from 'typeorm';
-import { ProjectsService } from '../projects/projects.service';
-import { TaskStatus } from './entities/task.entity';
+
+import {
+  ForbiddenException,
+  NotFoundException,
+  Injectable,
+} from '@nestjs/common';
 
 @Injectable()
 export class TasksService {
@@ -28,17 +29,21 @@ export class TasksService {
     createTaskDto: CreateTaskDto,
     userId: string
   ): Promise<Task | Task[]> {
-    await this.projectsService.findOne(createTaskDto.projectId, userId);
+    const project = await this.projectsService.findOne(
+      createTaskDto.projectId,
+      userId
+    );
 
     if (createTaskDto.breakdown) {
-      return this.breakdownAndCreateTasks(createTaskDto, userId);
+      return this.breakdownAndCreateTasks(createTaskDto, project, userId);
     }
 
-    return this.createSingleTask(createTaskDto, userId);
+    return this.createSingleTask(createTaskDto, project, userId);
   }
 
   private async createSingleTask(
     createTaskDto: CreateTaskDto,
+    project: Project,
     userId: string
   ): Promise<Task> {
     const { projectId, useAiEstimate, breakdown, ...taskData } = createTaskDto;
@@ -51,7 +56,8 @@ export class TasksService {
 
     if (createTaskDto.useAiEstimate) {
       const aiEstimate = await this.aiEstimatorService.estimateTask(
-        createTaskDto
+        createTaskDto,
+        project
       );
 
       await this.estimatesService.create({
@@ -68,6 +74,7 @@ export class TasksService {
 
   private async breakdownAndCreateTasks(
     createTaskDto: CreateTaskDto,
+    project: Project,
     userId: string
   ): Promise<Task[]> {
     const { projectId, useAiEstimate, breakdown, ...taskData } = createTaskDto;
@@ -79,7 +86,8 @@ export class TasksService {
     await this.taskRepository.save(parentTask);
 
     const subtaskDtos = await this.aiEstimatorService.breakdownTask(
-      createTaskDto
+      createTaskDto,
+      project
     );
 
     const createdSubtasks: Task[] = [];
@@ -155,17 +163,6 @@ export class TasksService {
     const task = await this.getTaskAndCheckPermissions(id, userId);
     await this.taskRepository.update(id, updateTaskDto);
     return this.findOne(id, userId);
-  }
-
-  async updateStatus(
-    id: string,
-    status: TaskStatus,
-    userId: string
-  ): Promise<Task> {
-    const task = await this.findOne(id, userId);
-    task.status = status;
-    await this.taskRepository.save(task);
-    return task;
   }
 
   async remove(id: string, userId: string): Promise<void> {

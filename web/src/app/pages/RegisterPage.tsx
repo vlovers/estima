@@ -1,91 +1,87 @@
-import { useEffect, useState } from 'react';
+import { useRegisterMutation } from '../features/auth/hooks/auth.hooks';
+import { Link } from 'react-router-dom';
+import { useState } from 'react';
+
 import {
-  Container,
-  Title,
-  Paper,
-  TextInput,
-  PasswordInput,
-  Button,
-  Text,
-  Anchor,
   LoadingOverlay,
+  PasswordInput,
+  TextInput,
+  Anchor,
+  Button,
+  Paper,
+  Stack,
+  Text,
+  Title,
+  Flex,
 } from '@mantine/core';
-import { Link, useNavigate } from 'react-router-dom';
-import { useDispatch, useSelector } from 'react-redux';
-import { AppDispatch, RootState } from '../store';
-import { registerUser } from '../store/authThunks';
-import { notifications } from '@mantine/notifications';
+
+function EstimaLogo() {
+  return (
+    <Title
+      order={1}
+      ta="center"
+      style={{
+        fontFamily: 'Greycliff CF, sans-serif',
+        fontWeight: 900,
+      }}
+    >
+      Estima
+    </Title>
+  );
+}
 
 export function RegisterPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const dispatch = useDispatch<AppDispatch>();
-  const navigate = useNavigate();
+  const { mutate: register, isPending } = useRegisterMutation();
 
-  const { loading, error } = useSelector((state: RootState) => state.auth);
-
-  const handleSubmit = async (event: React.FormEvent) => {
+  const handleSubmit = (event: React.FormEvent) => {
     event.preventDefault();
-    const result = await dispatch(registerUser({ email, password }));
-    if (registerUser.fulfilled.match(result)) {
-      notifications.show({
-        title: 'Registration Successful',
-        message: 'You are now logged in.',
-        color: 'green',
-      });
-      navigate('/');
-    }
+    register({ email, password });
   };
 
-  useEffect(() => {
-    if (error) {
-      notifications.show({
-        title: 'Registration Failed',
-        message: error,
-        color: 'red',
-      });
-    }
-  }, [error]);
-
   return (
-    <Container size={420} my={40}>
-      <Title ta="center">Create an account</Title>
-      <Text c="dimmed" size="sm" ta="center" mt={5}>
-        Already have an account?{' '}
-        <Anchor size="sm" component={Link} to="/login">
-          Sign in
-        </Anchor>
-      </Text>
-
-      <Paper
-        withBorder
-        shadow="md"
-        p={30}
-        mt={30}
-        radius="md"
-        component="form"
-        onSubmit={handleSubmit}
-      >
-        <LoadingOverlay visible={loading} />
-        <TextInput
-          label="Email"
-          placeholder="you@mantine.dev"
-          required
-          value={email}
-          onChange={(e) => setEmail(e.currentTarget.value)}
-        />
-        <PasswordInput
-          label="Password"
-          placeholder="Your password"
-          required
-          mt="md"
-          value={password}
-          onChange={(e) => setPassword(e.currentTarget.value)}
-        />
-        <Button type="submit" fullWidth mt="xl">
-          Register
-        </Button>
-      </Paper>
-    </Container>
+    <Flex mih="100vh" align="center" justify="center" p="md">
+      <Stack gap="xl" w={420}>
+        <EstimaLogo />
+        <Paper
+          withBorder
+          shadow="md"
+          p={30}
+          radius="md"
+          component="form"
+          onSubmit={handleSubmit}
+        >
+          <Title order={2} ta="center" mb="lg">
+            Create an account
+          </Title>
+          <LoadingOverlay visible={isPending} />
+          <TextInput
+            label="Email"
+            placeholder="you@mantine.dev"
+            required
+            value={email}
+            onChange={(event) => setEmail(event.currentTarget.value)}
+          />
+          <PasswordInput
+            label="Password"
+            placeholder="Your password"
+            required
+            mt="md"
+            value={password}
+            onChange={(event) => setPassword(event.currentTarget.value)}
+          />
+          <Button type="submit" fullWidth mt="xl">
+            Register
+          </Button>
+        </Paper>
+        <Text c="dimmed" size="sm" ta="center">
+          Already have an account?{' '}
+          <Anchor size="sm" component={Link} to="/login">
+            Sign in
+          </Anchor>
+        </Text>
+      </Stack>
+    </Flex>
   );
 }

@@ -1,5 +1,5 @@
-import axios from 'axios';
 import { LoginCredentials, RegisterCredentials } from '../types';
+import axios from 'axios';
 
 const API_URL = 'http://localhost:3000/api'; // This should be in an env file
 

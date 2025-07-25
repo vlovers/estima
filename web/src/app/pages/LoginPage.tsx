@@ -1,21 +1,19 @@
-import { useEffect, useState } from 'react';
+import { useLoginMutation } from '../features/auth/hooks/auth.hooks';
+import { Link } from 'react-router-dom';
+import { useState } from 'react';
+
 import {
-  Title,
-  Paper,
-  TextInput,
-  PasswordInput,
-  Button,
-  Text,
-  Anchor,
   LoadingOverlay,
-  Flex,
+  PasswordInput,
+  TextInput,
+  Anchor,
+  Button,
+  Paper,
   Stack,
+  Text,
+  Flex,
+  Title,
 } from '@mantine/core';
-import { Link, useNavigate } from 'react-router-dom';
-import { useDispatch, useSelector } from 'react-redux';
-import { AppDispatch, RootState } from '../store';
-import { loginUser } from '../store/authThunks';
-import { notifications } from '@mantine/notifications';
 
 function EstimaLogo() {
   return (
@@ -35,33 +33,12 @@ function EstimaLogo() {
 export function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const dispatch = useDispatch<AppDispatch>();
-  const navigate = useNavigate();
-
-  const { loading, error, token } = useSelector(
-    (state: RootState) => state.auth
-  );
+  const { mutate: login, isPending } = useLoginMutation();
 
   const handleSubmit = (event: React.FormEvent) => {
     event.preventDefault();
-    dispatch(loginUser({ email, password }));
+    login({ email, password });
   };
-
-  useEffect(() => {
-    if (token) {
-      navigate('/');
-    }
-  }, [token, navigate]);
-
-  useEffect(() => {
-    if (error) {
-      notifications.show({
-        title: 'Login Failed',
-        message: error,
-        color: 'red',
-      });
-    }
-  }, [error]);
 
   return (
     <Flex mih="100vh" align="center" justify="center" p="md">
@@ -75,7 +52,7 @@ export function LoginPage() {
           component="form"
           onSubmit={handleSubmit}
         >
-          <LoadingOverlay visible={loading} />
+          <LoadingOverlay visible={isPending} />
           <TextInput
             label="Email"
             placeholder="you@mantine.dev"

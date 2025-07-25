@@ -2,7 +2,6 @@ import { UpdateTaskDto } from './dto/update-task.dto';
 import { CreateTaskDto } from './dto/create-task.dto';
 import { TasksService } from './tasks.service';
 import { Task } from './entities/task.entity';
-import { TaskStatus } from './entities/task.entity';
 
 import {
   ApiBearerAuth,
@@ -71,22 +70,6 @@ export class TasksController {
     @Request() req
   ) {
     return this.tasksService.update(id, updateTaskDto, req.user.userId);
-  }
-
-  @Patch(':id/status')
-  @ApiOperation({ summary: 'Update a task status' })
-  @ApiResponse({
-    status: 200,
-    description: 'Task status updated successfully',
-    type: Task,
-  })
-  @ApiResponse({ status: 404, description: 'Task not found' })
-  updateStatus(
-    @Param('id', ParseUUIDPipe) id: string,
-    @Body('status') status: TaskStatus,
-    @Request() req
-  ) {
-    return this.tasksService.updateStatus(id, status, req.user.userId);
   }
 
   @Delete(':id')

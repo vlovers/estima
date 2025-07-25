@@ -11,12 +11,6 @@ import {
   Entity,
 } from 'typeorm';
 
-export enum TaskStatus {
-  TO_DO = 'TO_DO',
-  IN_PROGRESS = 'IN_PROGRESS',
-  DONE = 'DONE',
-}
-
 @Entity({ name: 'tasks' })
 export class Task {
   @PrimaryGeneratedColumn('uuid')
@@ -40,13 +34,6 @@ export class Task {
 
   @Column({ type: 'simple-array', nullable: true })
   tags: string[];
-
-  @Column({
-    type: 'enum',
-    enum: TaskStatus,
-    default: TaskStatus.TO_DO,
-  })
-  status: TaskStatus;
 
   @ManyToOne(() => Project, (project) => project.tasks)
   project: Project;

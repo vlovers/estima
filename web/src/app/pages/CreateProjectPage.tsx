@@ -1,15 +1,20 @@
-import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { useNavigate } from 'react-router-dom';
-import { ProjectForm } from '../components/ProjectForm';
+import { ProjectForm } from '../features/projects/components/ProjectForm';
+import { useQueryClient, useMutation } from '@tanstack/react-query';
 import { notifications } from '@mantine/notifications';
+import { useNavigate } from 'react-router-dom';
 import { api } from '../services/authApiService';
+import { Project } from '../types';
 
 interface CreateProjectDto {
   name: string;
   description: string;
+  complexity: 'LOW' | 'MEDIUM' | 'HIGH';
+  overhead: number;
 }
 
-const createProject = async (projectData: CreateProjectDto): Promise<any> => {
+const createProject = async (
+  projectData: CreateProjectDto
+): Promise<Project> => {
   const { data } = await api.post('/projects', projectData);
   return data;
 };
@@ -18,7 +23,7 @@ export function CreateProjectPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
-  const mutation = useMutation<any, Error, CreateProjectDto>({
+  const mutation = useMutation<Project, Error, CreateProjectDto>({
     mutationFn: createProject,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['projects'] });
@@ -42,12 +47,5 @@ export function CreateProjectPage() {
     mutation.mutate(values);
   };
 
-  return (
-    <ProjectForm
-      onSubmit={handleSubmit}
-      isLoading={mutation.isPending}
-      formTitle="Create New Project"
-      submitButtonText="Create Project"
-    />
-  );
+  return <ProjectForm onSubmit={handleSubmit} isLoading={mutation.isPending} />;
 }
