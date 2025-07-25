@@ -12,8 +12,10 @@ import {
   TextInput,
   Loader,
   Button,
+  Badge,
   Group,
   Modal,
+  Stack,
   Text,
   Alert,
   Card,
@@ -28,6 +30,12 @@ const fetchProjects = async (): Promise<Project[]> => {
 
 const deleteProject = async (id: string): Promise<void> => {
   await api.delete(`/projects/${id}`);
+};
+
+const complexityColors: Record<Project['complexity'], string> = {
+  LOW: 'green',
+  MEDIUM: 'yellow',
+  HIGH: 'red',
 };
 
 export function ProjectsList() {
@@ -119,44 +127,74 @@ export function ProjectsList() {
         rightSection={<IconSearch size={14} />}
       />
 
-      <SimpleGrid cols={3} spacing="lg">
+      <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }} spacing="lg">
         {filteredProjects?.map((project) => (
-          <Card shadow="sm" p="lg" radius="md" withBorder key={project.id}>
-            <Group justify="space-between" mt="md" mb="xs">
-              <Text fw={500}>{project.name}</Text>
-            </Group>
+          <Card
+            shadow="sm"
+            p="lg"
+            radius="md"
+            withBorder
+            key={project.id}
+            component={Link}
+            to={`/projects/${project.id}`}
+            style={{ textDecoration: 'none' }}
+          >
+            <Stack justify="space-between" h="100%">
+              <div>
+                <Group justify="space-between" mb="xs">
+                  <Title order={4}>{project.name}</Title>
+                  <Badge color={complexityColors[project.complexity]}>
+                    {project.complexity}
+                  </Badge>
+                </Group>
 
-            <Text size="sm" c="dimmed">
-              {project.description}
-            </Text>
+                <Text size="sm" c="dimmed" lineClamp={3}>
+                  {project.description}
+                </Text>
+              </div>
 
-            <Group justify="flex-end" mt="md">
-              <ActionIcon
-                variant="light"
-                component={Link}
-                to={`/projects/${project.id}/edit`}
-              >
-                <IconPencil size={16} />
-              </ActionIcon>
-              <ActionIcon
-                variant="light"
-                color="red"
-                onClick={() => openDeleteModal(project.id)}
-              >
-                <IconTrash size={16} />
-              </ActionIcon>
-              <Button
-                variant="light"
-                color="blue"
-                fullWidth
-                mt="md"
-                radius="md"
-                component={Link}
-                to={`/projects/${project.id}`}
-              >
-                View Details
-              </Button>
-            </Group>
+              <div>
+                <Group mt="md" grow>
+                  <Stack gap={0} align="center">
+                    <Text size="lg" fw={700}>
+                      {project.tasks?.length || 0}
+                    </Text>
+                    <Text size="xs" c="dimmed">
+                      Tasks
+                    </Text>
+                  </Stack>
+                  <Stack gap={0} align="center">
+                    <Text size="lg" fw={700}>
+                      {project.overhead}%
+                    </Text>
+                    <Text size="xs" c="dimmed">
+                      Overhead
+                    </Text>
+                  </Stack>
+                </Group>
+
+                <Group justify="flex-end" mt="md">
+                  <ActionIcon
+                    variant="light"
+                    component={Link}
+                    to={`/projects/${project.id}/edit`}
+                    onClick={(e) => e.preventDefault()}
+                  >
+                    <IconPencil size={16} />
+                  </ActionIcon>
+                  <ActionIcon
+                    variant="light"
+                    color="red"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      openDeleteModal(project.id);
+                    }}
+                  >
+                    <IconTrash size={16} />
+                  </ActionIcon>
+                </Group>
+              </div>
+            </Stack>
           </Card>
         ))}
       </SimpleGrid>

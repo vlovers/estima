@@ -1,26 +1,26 @@
+import { ProjectsList } from './features/projects/components/ProjectsList';
+import { useLogoutMutation } from './features/auth/hooks/auth.hooks';
+import { ProtectedRoute } from './components/ProtectedRoute';
+import { ThemeSwitcher } from './components/ThemeSwitcher';
+import { CreateProjectPage } from './pages/CreateProjectPage';
 import { Route, Routes, Outlet, Link } from 'react-router-dom';
+import { IconHome, IconLogout } from '@tabler/icons-react';
+import { ProjectDetails } from './components/ProjectDetails';
+import { EditProjectPage } from './pages/EditProjectPage';
+import { Notifications } from '@mantine/notifications';
+import { RegisterPage } from './pages/RegisterPage';
+import { useDisclosure } from '@mantine/hooks';
+import { LoginPage } from './pages/LoginPage';
+
 import {
   AppShell,
+  NavLink,
   Burger,
   Divider,
   Group,
-  NavLink,
   Stack,
   Title,
 } from '@mantine/core';
-import { useDisclosure } from '@mantine/hooks';
-import { Notifications } from '@mantine/notifications';
-import { IconHome, IconLogout } from '@tabler/icons-react';
-
-import { useLogoutMutation } from './features/auth/hooks/auth.hooks';
-import { ProjectsList } from './features/projects/components/ProjectsList';
-import { ProtectedRoute } from './components/ProtectedRoute';
-import { ProjectDetails } from './components/ProjectDetails';
-
-import { CreateProjectPage } from './pages/CreateProjectPage';
-import { EditProjectPage } from './pages/EditProjectPage';
-import { LoginPage } from './pages/LoginPage';
-import { RegisterPage } from './pages/RegisterPage';
 
 export function App() {
   const [opened, { toggle }] = useDisclosure();
@@ -49,14 +49,17 @@ export function App() {
                 padding="md"
               >
                 <AppShell.Header>
-                  <Group h="100%" px="md">
-                    <Burger
-                      opened={opened}
-                      onClick={toggle}
-                      hiddenFrom="sm"
-                      size="sm"
-                    />
-                    <Title order={3}>AI Estimates</Title>
+                  <Group h="100%" px="md" justify="space-between">
+                    <Group>
+                      <Burger
+                        opened={opened}
+                        onClick={toggle}
+                        hiddenFrom="sm"
+                        size="sm"
+                      />
+                      <Title order={3}>AI Estimates</Title>
+                    </Group>
+                    <ThemeSwitcher />
                   </Group>
                 </AppShell.Header>
 
