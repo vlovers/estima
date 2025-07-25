@@ -1,96 +1,136 @@
-# 
+# AI Estimates Monorepo
 
-<a alt="Nx logo" href="https://nx.dev" target="_blank" rel="noreferrer"><img src="https://raw.githubusercontent.com/nrwl/nx/master/images/nx-logo.png" width="45"></a>
+A full-stack application designed to provide AI-powered time estimates for software development tasks. This monorepo contains the NestJS backend API and the React frontend application, managed with Nx.
 
-✨ Your new, shiny [Nx workspace](https://nx.dev) is ready ✨.
+## Features
 
-[Learn more about this workspace setup and its capabilities](https://nx.dev/getting-started/intro#learn-nx?utm_source=nx_project&amp;utm_medium=readme&amp;utm_campaign=nx_projects) or run `npx nx graph` to visually explore what was created. Now, let's get you up to speed!
+*   **User Authentication:** Secure registration and login with JWT-based authentication.
+*   **Project Management:** Create, view, update, and delete projects.
+*   **Task Management:** Add tasks to projects, update their status, and manage details.
+*   **AI-Powered Estimations:** Get development time estimates for tasks based on their description, technology, and required experience level.
+*   **Database Migrations:** TypeORM migrations to manage the database schema.
 
-## Run tasks
+---
 
-To run tasks with Nx use:
+## Tech Stack
 
-```sh
-npx nx <target> <project-name>
+### Backend (API)
+
+*   **Framework:** [NestJS](https://nestjs.com/)
+*   **Language:** TypeScript
+*   **Database:** PostgreSQL
+*   **ORM:** [TypeORM](https://typeorm.io/)
+*   **Authentication:** JWT with Passport.js
+
+### Frontend (Web)
+
+*   **Framework:** [React](https://reactjs.org/)
+*   **Language:** TypeScript
+*   **UI Library:** [Mantine](https://mantine.dev/)
+*   **State Management:** [Redux Toolkit](https://redux-toolkit.js.org/)
+*   **Data Fetching:** [React Query](https://tanstack.com/query/v4)
+
+### Tooling
+
+*   **Monorepo:** [Nx](https://nx.dev/)
+*   **Package Manager:** [Yarn](https://yarnpkg.com/)
+
+---
+
+## Prerequisites
+
+Before you begin, ensure you have the following installed on your system:
+
+*   [Node.js](https://nodejs.org/en/) (v18 or later recommended)
+*   [Yarn](https://yarnpkg.com/getting-started/install)
+*   [Docker](https://www.docker.com/get-started/) and Docker Compose
+
+---
+
+## Getting Started
+
+### 1. Clone the Repository
+
+```bash
+git clone https://https://github.com/vlovers/estima.git
+cd estima
 ```
 
-For example:
+### 2. Install Dependencies
 
-```sh
-npx nx build myproject
+Install all the necessary dependencies for both the API and web applications from the root directory.
+
+```bash
+yarn install
 ```
 
-These targets are either [inferred automatically](https://nx.dev/concepts/inferred-tasks?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects) or defined in the `project.json` or `package.json` files.
+---
 
-[More about running tasks in the docs &raquo;](https://nx.dev/features/run-tasks?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
+## Running the Application
 
-## Add new projects
+### Backend (API)
 
-While you could add new projects to your workspace manually, you might want to leverage [Nx plugins](https://nx.dev/concepts/nx-plugins?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects) and their [code generation](https://nx.dev/features/generate-code?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects) feature.
+1.  **Set Up Environment Variables:**
+    Navigate to the `api` directory and create a `.env` file by copying the example:
 
-To install a new plugin you can use the `nx add` command. Here's an example of adding the React plugin:
-```sh
-npx nx add @nx/react
-```
+    ```bash
+    cd api
+    cp .env.example .env
+    ```
 
-Use the plugin's generator to create new projects. For example, to create a new React app or library:
+    Open the `.env` file and fill in the required environment variables, such as your database credentials and JWT secrets.
 
-```sh
-# Generate an app
-npx nx g @nx/react:app demo
+2.  **Start the Database:**
+    From the root of the project, start the PostgreSQL database using Docker Compose:
 
-# Generate a library
-npx nx g @nx/react:lib some-lib
-```
+    ```bash
+    docker-compose up -d
+    ```
 
-You can use `npx nx list` to get a list of installed plugins. Then, run `npx nx list <plugin-name>` to learn about more specific capabilities of a particular plugin. Alternatively, [install Nx Console](https://nx.dev/getting-started/editor-setup?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects) to browse plugins and generators in your IDE.
+3.  **Run Database Migrations:**
+    To set up the database schema, run the TypeORM migrations:
 
-[Learn more about Nx plugins &raquo;](https://nx.dev/concepts/nx-plugins?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects) | [Browse the plugin registry &raquo;](https://nx.dev/plugin-registry?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
+    ```bash
+    yarn typeorm:run-migrations
+    ```
 
-## Set up CI!
+4.  **Start the API Server:**
+    From the root of the project, start the NestJS development server:
 
-### Step 1
+    ```bash
+    yarn start:api
+    ```
 
-To connect to Nx Cloud, run the following command:
+    The API will be running at `http://localhost:3000`.
 
-```sh
-npx nx connect
-```
+### Frontend (Web)
 
-Connecting to Nx Cloud ensures a [fast and scalable CI](https://nx.dev/ci/intro/why-nx-cloud?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects) pipeline. It includes features such as:
+1.  **Start the Web Server:**
+    In a new terminal, start the React development server from the root of the project:
 
-- [Remote caching](https://nx.dev/ci/features/remote-cache?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-- [Task distribution across multiple machines](https://nx.dev/ci/features/distribute-task-execution?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-- [Automated e2e test splitting](https://nx.dev/ci/features/split-e2e-tasks?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-- [Task flakiness detection and rerunning](https://nx.dev/ci/features/flaky-tasks?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
+    ```bash
+    yarn start:web
+    ```
 
-### Step 2
+    The frontend application will be available at `http://localhost:4200`.
 
-Use the following command to configure a CI workflow for your workspace:
+---
 
-```sh
-npx nx g ci-workflow
-```
+## Available Scripts
 
-[Learn more about Nx on CI](https://nx.dev/ci/intro/ci-with-nx#ready-get-started-with-your-provider?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
+Here are some of the most common scripts you can run from the root directory:
 
-## Install Nx Console
+*   `yarn start:api`: Starts the backend development server.
+*   `yarn start:web`: Starts the frontend development server.
 
-Nx Console is an editor extension that enriches your developer experience. It lets you run tasks, generate code, and improves code autocompletion in your IDE. It is available for VSCode and IntelliJ.
+*   `yarn build:api`: Builds the backend application for production.
+*   `yarn build:web`: Builds the frontend application for production.
 
-[Install Nx Console &raquo;](https://nx.dev/getting-started/editor-setup?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
+*   `yarn typeorm:run-migrations`: Runs all pending database migrations.
+*   `yarn typeorm:revert-migration`: Reverts the last executed migration.
 
-## Useful links
+*   `yarn test`: Runs unit tests for all projects.
+*   `yarn test:e2e:api`: Runs end-to-end tests for the API.
+*   `yarn test:e2e:web`: Runs end-to-end tests for the web application.
 
-Learn more:
-
-- [Learn more about this workspace setup](https://nx.dev/getting-started/intro#learn-nx?utm_source=nx_project&amp;utm_medium=readme&amp;utm_campaign=nx_projects)
-- [Learn about Nx on CI](https://nx.dev/ci/intro/ci-with-nx?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-- [Releasing Packages with Nx release](https://nx.dev/features/manage-releases?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-- [What are Nx plugins?](https://nx.dev/concepts/nx-plugins?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-
-And join the Nx community:
-- [Discord](https://go.nx.dev/community)
-- [Follow us on X](https://twitter.com/nxdevtools) or [LinkedIn](https://www.linkedin.com/company/nrwl)
-- [Our Youtube channel](https://www.youtube.com/@nxdevtools)
-- [Our blog](https://nx.dev/blog?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
+*   `yarn lint`: Lints all projects in the workspace.
