@@ -116,6 +116,38 @@ yarn install
 
 ---
 
+## Running with Docker
+
+Alternatively, you can run the entire application stack using Docker Compose.
+
+1.  **Set Up Environment Variables:**
+    Ensure you have a properly configured `.env` file in the `api/` directory as described in the "Getting Started" section.
+
+2.  **Build and Run Containers:**
+    From the root of the project, run the following command to build the images and start the containers in detached mode:
+
+    ```bash
+    docker-compose up --build -d
+    ```
+
+3.  **Run Database Migrations:**
+    Once the containers are running, execute the database migrations inside the `api` container:
+
+    ```bash
+    docker-compose exec api yarn typeorm:run-migrations
+    ```
+
+    The application will be available at `http://localhost` (the web frontend) and the API at `http://localhost:3000`.
+
+4.  **Stopping the Application:**
+    To stop and remove the containers, run:
+
+    ```bash
+    docker-compose down
+    ```
+
+---
+
 ## Available Scripts
 
 Here are some of the most common scripts you can run from the root directory:
