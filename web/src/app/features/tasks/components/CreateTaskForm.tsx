@@ -34,6 +34,9 @@ interface CreateTaskFormProps {
 
 export function CreateTaskForm({ projectId, onSuccess }: CreateTaskFormProps) {
   const [mode, setMode] = useState('form');
+  const [jsonInput, setJsonInput] = useState(
+    JSON.stringify(initialValues, null, 2)
+  );
   const [jsonError, setJsonError] = useState<string | null>(null);
   const [formValues, setFormValues] = useState(initialValues);
 
@@ -49,7 +52,8 @@ export function CreateTaskForm({ projectId, onSuccess }: CreateTaskFormProps) {
       mutation.mutate(taskData);
     } else {
       try {
-        const taskData = { ...formValues, projectId };
+        const parsed = JSON.parse(jsonInput);
+        const taskData = { ...parsed, projectId };
         mutation.mutate(taskData);
       } catch {
         setJsonError('Invalid JSON');
@@ -74,7 +78,6 @@ export function CreateTaskForm({ projectId, onSuccess }: CreateTaskFormProps) {
               { label: 'JSON', value: 'json' },
             ]}
             fullWidth
-            mb="md"
           />
 
           {mode === 'form' ? (
@@ -90,11 +93,13 @@ export function CreateTaskForm({ projectId, onSuccess }: CreateTaskFormProps) {
               />
               <Textarea
                 label="Description"
-                placeholder="Detailed description of the task"
+                placeholder="Enter task description"
                 value={formValues.description}
                 onChange={(event) =>
                   handleFormChange('description', event.currentTarget.value)
                 }
+                required
+                autosize
                 minRows={4}
               />
               <TextInput
@@ -143,20 +148,24 @@ export function CreateTaskForm({ projectId, onSuccess }: CreateTaskFormProps) {
               </Group>
               <NumberInput
                 label="Manual Estimate (hours)"
-                disabled={formValues.useAiEstimate}
+                placeholder="Enter manual estimate"
                 value={formValues.manualEstimate}
                 onChange={(value) => handleFormChange('manualEstimate', value)}
-                min={0}
               />
             </>
           ) : (
             <Textarea
+              label="Paste Task JSON"
               placeholder="Paste your JSON here"
-              minRows={15}
-              value={JSON.stringify(formValues, null, 2)}
+              rows={10}
+              autosize
+              minRows={10}
+              value={jsonInput}
               onChange={(event) => {
+                const newJson = event.currentTarget.value;
+                setJsonInput(newJson);
                 try {
-                  const parsed = JSON.parse(event.currentTarget.value);
+                  const parsed = JSON.parse(newJson);
                   setFormValues(parsed);
                   setJsonError(null);
                 } catch {
@@ -166,7 +175,6 @@ export function CreateTaskForm({ projectId, onSuccess }: CreateTaskFormProps) {
               error={jsonError}
             />
           )}
-
           <Button type="submit" mt="md" loading={mutation.isPending}>
             Create Task
           </Button>

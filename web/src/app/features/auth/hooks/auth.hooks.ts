@@ -15,7 +15,7 @@ export const useLoginMutation = () => {
     mutationFn: (credentials: LoginCredentials) => authApi.login(credentials),
     onSuccess: (data) => {
       dispatch(setAuth(data));
-      navigate('/projects');
+      navigate('/');
       notifications.show({
         title: 'Login Successful',
         message: 'Welcome back!',
@@ -44,7 +44,7 @@ export const useRegisterMutation = () => {
       authApi.register(credentials),
     onSuccess: (data) => {
       dispatch(setAuth(data));
-      navigate('/projects');
+      navigate('/');
       notifications.show({
         title: 'Registration Successful',
         message: 'Your account has been created.',

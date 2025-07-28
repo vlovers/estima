@@ -40,7 +40,6 @@ export class TasksController {
   })
   @ApiResponse({ status: 400, description: 'Invalid input' })
   async create(@Body() createTaskDto: CreateTaskDto, @Request() req) {
-    console.log('req.user.userId', req.user.userId);
     const result = await this.tasksService.create(
       createTaskDto,
       req.user.userId

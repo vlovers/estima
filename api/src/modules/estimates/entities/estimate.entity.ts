@@ -3,6 +3,7 @@ import { User } from '../../users/entities/user.entity';
 import { Task } from '../../tasks/entities/task.entity';
 
 export enum EstimateSource {
+  AI_SUBTASK_SUM = 'ai_subtask_sum',
   MANUAL = 'manual',
   FINAL = 'final',
   AI = 'ai',
@@ -31,9 +32,14 @@ export class Estimate {
   })
   source: EstimateSource;
 
-  @ManyToOne(() => Task, (task) => task.estimates)
+  @ManyToOne(() => Task, (task) => task.estimates, {
+    onDelete: 'CASCADE',
+  })
   task: Task;
 
-  @ManyToOne(() => User, (user) => user.estimates, { nullable: true })
+  @ManyToOne(() => User, (user) => user.estimates, {
+    nullable: true,
+    eager: true,
+  })
   user: User;
 }

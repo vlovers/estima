@@ -5,6 +5,8 @@ import { ExperienceLevel } from './experience-level.enum';
 
 import {
   PrimaryGeneratedColumn,
+  UpdateDateColumn,
+  CreateDateColumn,
   OneToMany,
   ManyToOne,
   Column,
@@ -35,16 +37,27 @@ export class Task {
   @Column({ type: 'simple-array', nullable: true })
   tags: string[];
 
+  @CreateDateColumn()
+  createdAt: Date;
+
+  @UpdateDateColumn()
+  updatedAt: Date;
+
   @ManyToOne(() => Project, (project) => project.tasks)
   project: Project;
 
   @OneToMany(() => Estimate, (estimate) => estimate.task)
   estimates: Estimate[];
 
-  @ManyToOne(() => Task, (task) => task.subtasks, { nullable: true })
+  @ManyToOne(() => Task, (task) => task.subtasks, {
+    onDelete: 'CASCADE',
+    nullable: true,
+  })
   parentTask: Task;
 
-  @OneToMany(() => Task, (task) => task.parentTask)
+  @OneToMany(() => Task, (task) => task.parentTask, {
+    cascade: true,
+  })
   subtasks: Task[];
 
   @OneToMany(() => EstimateFeedback, (feedback) => feedback.task)

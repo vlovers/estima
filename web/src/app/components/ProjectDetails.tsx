@@ -1,15 +1,15 @@
 import { ManualEstimateForm } from '../features/tasks/components/ManualEstimateForm';
 import { CreateTaskForm } from '../features/tasks/components/CreateTaskForm';
+import { IconSearch, IconArrowDown, IconArrowUp } from '@tabler/icons-react';
 import { ProjectHeader } from '../features/projects/components/ProjectHeader';
 import { FeedbackForm } from '../features/tasks/components/FeedbackForm';
-import { EditTaskForm } from '../features/tasks/components/EditTaskForm';
 import { useFetchProject } from '../features/projects/hooks/projects.hooks';
+import { EditTaskForm } from '../features/tasks/components/EditTaskForm';
 import { ProjectStats } from '../features/projects/components/ProjectStats';
-import { TaskFilters } from '../features/tasks/components/TaskFilters';
 import { TaskList } from '../features/tasks/components/TaskList';
+import { useState, useMemo, useEffect } from 'react';
 import { useDisclosure } from '@mantine/hooks';
 import { useParams } from 'react-router-dom';
-import { useState, useMemo } from 'react';
 import { Task } from '../types';
 
 import {
@@ -19,10 +19,13 @@ import {
 } from '../features/tasks/hooks/tasks.hooks';
 
 import {
+  ActionIcon,
+  TextInput,
   Collapse,
   Loader,
   Divider,
   Button,
+  Select,
   Modal,
   Group,
   Stack,
@@ -50,12 +53,12 @@ const filterTasks = (
   };
 
   const recursiveFilter = (task: Task): Task | null => {
-    const children = (task.children || [])
+    const subtasks = (task.subtasks || [])
       .map(recursiveFilter)
       .filter(Boolean) as Task[];
 
-    if (matches(task) || children.length > 0) {
-      return { ...task, children };
+    if (matches(task) || subtasks.length > 0) {
+      return { ...task, subtasks };
     }
 
     return null;
@@ -73,6 +76,9 @@ export function ProjectDetails() {
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [tagsFilter, setTagsFilter] = useState<string[]>([]);
+  const [sortField, setSortField] = useState('createdAt');
+  const [sortOrder, setSortOrder] = useState('DESC');
+  const [expandedTasks, setExpandedTasks] = useState<Set<string>>(new Set());
 
   // Modals State
   const [editModalOpened, { open: openEditModal, close: closeEditModal }] =
@@ -91,7 +97,18 @@ export function ProjectDetails() {
   ] = useDisclosure(false);
 
   // Data Fetching
-  const { data: project, isLoading, isError, error } = useFetchProject(id!);
+  const {
+    data: project,
+    isLoading,
+    isError,
+    error,
+  } = useFetchProject(id!, sortField, sortOrder);
+
+  useEffect(() => {
+    if (project) {
+      console.log('Data received from backend:', project);
+    }
+  }, [project]);
 
   // Mutations
   const deleteMutation = useDeleteTaskMutation(project?.id || '');
@@ -100,18 +117,16 @@ export function ProjectDetails() {
     project?.id || ''
   );
 
-  // Memoized Data
+  // Derived State
   const allTags = useMemo(() => {
-    if (!project?.tasks) return [];
-    const tags = new Set<string>();
-    project.tasks.forEach((task) => task.tags.forEach((tag) => tags.add(tag)));
-    return Array.from(tags);
-  }, [project?.tasks]);
+    if (!project) return [];
+
+    return [...new Set(project.tasks.flatMap((task) => task.tags || []))];
+  }, [project]);
 
   const filteredTasks = useMemo(() => {
-    if (!project?.tasks) return [];
-    return filterTasks(project.tasks, searchQuery, tagsFilter);
-  }, [project?.tasks, searchQuery, tagsFilter]);
+    return filterTasks(project.tasks || [], searchQuery, tagsFilter);
+  }, [project, searchQuery, tagsFilter]);
 
   // Handlers
   const handleEditClick = (task: Task) => {
@@ -132,6 +147,18 @@ export function ProjectDetails() {
   const handleManualEstimateClick = (task: Task) => {
     setSelectedTask(task);
     openManualEstimateModal();
+  };
+
+  const handleToggleTask = (taskId: string) => {
+    setExpandedTasks((prev) => {
+      const newSet = new Set(prev);
+      if (newSet.has(taskId)) {
+        newSet.delete(taskId);
+      } else {
+        newSet.add(taskId);
+      }
+      return newSet;
+    });
   };
 
   const handleDeleteConfirm = () => {
@@ -171,19 +198,47 @@ export function ProjectDetails() {
 
         <Tabs.Panel value="tasks" pt="xs">
           <Stack>
-            <TaskFilters
-              searchQuery={searchQuery}
-              setSearchQuery={setSearchQuery}
-              tagsFilter={tagsFilter}
-              setTagsFilter={setTagsFilter}
-              allTags={allTags}
-            />
+            <Group justify="space-between" mb="md">
+              <TextInput
+                placeholder="Search tasks..."
+                value={searchQuery}
+                onChange={(event) => setSearchQuery(event.currentTarget.value)}
+                style={{ flex: 1 }}
+                leftSection={<IconSearch size={16} />}
+              />
+              <Group>
+                <Select
+                  value={sortField}
+                  onChange={(value) => setSortField(value || 'createdAt')}
+                  data={[
+                    { value: 'createdAt', label: 'Date' },
+                    { value: 'finalEstimate', label: 'AI Estimate' },
+                    { value: 'manualEstimate', label: 'Manual Estimate' },
+                  ]}
+                />
+                <ActionIcon
+                  variant="default"
+                  onClick={() =>
+                    setSortOrder(sortOrder === 'ASC' ? 'DESC' : 'ASC')
+                  }
+                  size="lg"
+                >
+                  {sortOrder === 'ASC' ? (
+                    <IconArrowUp size={16} />
+                  ) : (
+                    <IconArrowDown size={16} />
+                  )}
+                </ActionIcon>
+              </Group>
+            </Group>
             <TaskList
               tasks={filteredTasks}
               onEdit={handleEditClick}
               onDelete={handleDeleteClick}
               onFeedback={handleFeedbackClick}
               onManualEstimate={handleManualEstimateClick}
+              expandedTasks={expandedTasks}
+              onToggleTask={handleToggleTask}
             />
           </Stack>
         </Tabs.Panel>

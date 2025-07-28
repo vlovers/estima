@@ -1,3 +1,4 @@
+import { SortProjectTasksDto, SortField } from './dto/sort-project-tasks.dto';
 import { UpdateProjectDto } from './dto/update-project.dto';
 import { CreateProjectDto } from './dto/create-project.dto';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -30,15 +31,40 @@ export class ProjectsService {
     return this.projectRepository.find({ where: { userId } });
   }
 
-  async findOne(id: string, userId: string, tree?: boolean) {
-    const relations = ['tasks', 'tasks.estimates', 'tasks.feedbacks'];
+  async findOne(
+    id: string,
+    userId: string,
+    tree?: boolean,
+    sortDto?: SortProjectTasksDto
+  ) {
+    const qb = this.projectRepository
+      .createQueryBuilder('project')
+      .leftJoinAndSelect('project.tasks', 'task')
+      .leftJoinAndSelect('task.estimates', 'estimate')
+      .leftJoinAndSelect('task.feedbacks', 'feedback')
+      .where('project.id = :id', { id })
+      .andWhere('project.userId = :userId', { userId });
+
     if (tree) {
-      relations.push('tasks.parentTask');
+      qb.leftJoinAndSelect('task.parentTask', 'parentTask');
     }
-    const project = await this.projectRepository.findOne({
-      where: { id, userId },
-      relations,
-    });
+
+    if (sortDto?.sortBy) {
+      const { sortBy, sortOrder } = sortDto;
+      let orderBy: string;
+
+      if (sortBy === SortField.CREATED_AT) {
+        orderBy = 'task.createdAt';
+      } else if (sortBy === SortField.FINAL_ESTIMATE) {
+        orderBy = 'estimate.finalEstimate';
+      } else {
+        orderBy = 'estimate.manualEstimate';
+      }
+      qb.orderBy(orderBy, sortOrder);
+    }
+
+    const project = await qb.getOne();
+
     if (!project) {
       throw new NotFoundException(`Project with ID "${id}" not found`);
     }
@@ -76,25 +102,25 @@ export class ProjectsService {
   }
 
   private buildTaskTree(tasks: Task[]): Task[] {
-    const taskMap = new Map<string, Task & { children: Task[] }>();
-    const roots: (Task & { children: Task[] })[] = [];
+    const taskMap = new Map<string, Task & { subtasks: Task[] }>();
+    const rootTasks: (Task & { subtasks: Task[] })[] = [];
 
     tasks.forEach((task) => {
-      taskMap.set(task.id, { ...task, children: [] });
+      taskMap.set(task.id, { ...task, subtasks: [] });
     });
 
     tasks.forEach((task) => {
-      const taskWithChildren = taskMap.get(task.id);
-      if (task.parentTask && taskMap.has(task.parentTask.id)) {
+      if (task.parentTask) {
         const parent = taskMap.get(task.parentTask.id);
+        const taskWithSubtasks = taskMap.get(task.id)!;
         if (parent) {
-          parent.children.push(taskWithChildren);
+          parent.subtasks.push(taskWithSubtasks);
         }
       } else {
-        roots.push(taskWithChildren);
+        rootTasks.push(taskMap.get(task.id)!);
       }
     });
 
-    return roots;
+    return rootTasks;
   }
 }

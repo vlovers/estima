@@ -9,7 +9,7 @@ import { ConfigService } from '@nestjs/config';
 import { Repository } from 'typeorm';
 import OpenAI from 'openai';
 
-interface Subtask {
+export interface Subtask {
   title: string;
   description: string;
   estimateHours: number;
@@ -34,49 +34,60 @@ export class AiEstimatorService {
     taskDto: CreateTaskDto,
     project: Project
   ): Promise<EstimateDto> {
-    const model = this.configService.get<string>('OPENAI_MODEL', 'gpt-4-turbo');
+    const model = this.configService.get<string>('OPENAI_MODEL', 'gpt-4o');
 
     const explanationLog: string[] = [];
 
-    // 1. Top-down
+    // 1. Top-down estimate
     const topDownPrompt = this.buildPrompt(taskDto, project);
     const topDown = await this.requestEstimateOnly(topDownPrompt, model);
     explanationLog.push(`Top-down: ${topDown}h`);
 
-    // 2. Breakdown
+    // 2. Bottom-up estimate
     const subtasks = await this.breakdownTask(taskDto, project);
-    const bottomUp = subtasks.reduce((s, t) => s + t.estimateHours, 0);
+    const bottomUp = subtasks.reduce((sum, st) => sum + st.estimateHours, 0);
     explanationLog.push(`Bottom-up (subtasks sum): ${bottomUp}h`);
 
-    // 3. Correction from feedback
-    const corrected = await this.getCorrectedEstimate(bottomUp, taskDto);
-    explanationLog.push(`Corrected by feedback: ${corrected.toFixed(1)}h`);
+    // 3. Learn from past estimates
+    const { correctedEstimate, averageError } = await this.getCorrectedEstimate(
+      bottomUp,
+      taskDto
+    );
+    explanationLog.push(
+      `Corrected by feedback (avg error ${averageError.toFixed(
+        1
+      )}h): ${correctedEstimate.toFixed(1)}h`
+    );
 
-    // 4. Modifiers
+    // 4. Apply context-based modifiers
     const adjusted = this.applyModifiers(
-      corrected,
+      correctedEstimate,
       taskDto,
       project,
       explanationLog
     );
 
-    // 5. Mismatch check
-    const divergence = Math.abs(topDown - bottomUp);
-    if (divergence > Math.max(4, bottomUp * 0.25)) {
-      explanationLog.push(
-        `⚠️ Divergence detected: ${topDown}h vs ${bottomUp}h`
-      );
+    // 5. Mismatch warning & Confidence calculation
+    const divergence =
+      bottomUp > 0 ? Math.abs(topDown - bottomUp) / bottomUp : 0;
+    if (divergence > 0.4) {
+      explanationLog.push(`⚠️ High divergence: ${topDown}h vs ${bottomUp}h`);
     }
 
+    // 6. Final cleanup
     const final = this.sanitize(adjusted);
     explanationLog.push(`Final sanitized: ${final}h`);
 
-    console.log('explanationLog', explanationLog);
-
     const estimate = new EstimateDto();
     estimate.finalEstimate = final;
-    estimate.confidence = this.calculateConfidence(taskDto.description);
-    estimate.source = 'AI';
+    estimate.confidence = this.calculateConfidence({
+      description: taskDto.description,
+      divergence,
+      historicalError: averageError,
+      manualEstimate: taskDto.manualEstimate,
+      aiEstimate: final,
+    });
+    estimate.source = EstimateSource.AI;
     estimate.explanation = explanationLog.join('\n');
 
     return estimate;
@@ -104,35 +115,33 @@ export class AiEstimatorService {
   ): number {
     let multiplier = 1;
 
-    // Project complexity
     switch (project.complexity) {
       case 'LOW':
-        multiplier *= 0.8;
+        multiplier *= 0.85;
         break;
       case 'HIGH':
-        multiplier *= 1.25;
+        multiplier *= 1.2;
         break;
     }
 
     switch (taskDto.experienceLevel.toLowerCase()) {
       case 'junior':
-        multiplier *= 1.3;
+        multiplier *= 1.25;
         break;
       case 'mid':
-        multiplier *= 1.0;
+        multiplier *= 1;
         break;
       case 'senior':
-        multiplier *= 0.8;
+        multiplier *= 0.85;
         break;
     }
 
-    if (/react|next/i.test(taskDto.technology)) multiplier *= 0.9;
+    if (/react|next/i.test(taskDto.technology)) multiplier *= 0.95;
     else if (/nestjs|java|graphql/i.test(taskDto.technology)) multiplier *= 1.1;
 
     const adjusted = original * multiplier;
     log.push(`Modifier x${multiplier.toFixed(2)} → ${adjusted.toFixed(1)}h`);
 
-    // Overhead
     if (project.overhead > 0) {
       const withOverhead = adjusted * (1 + project.overhead / 100);
       log.push(`Overhead +${project.overhead}% → ${withOverhead.toFixed(1)}h`);
@@ -143,9 +152,7 @@ export class AiEstimatorService {
   }
 
   private sanitize(val: number): number {
-    if (val < 0.5) return 0.5;
-    if (val > 200) return 200;
-    return parseFloat(val.toFixed(1));
+    return Math.min(Math.max(0.25, parseFloat(val.toFixed(1))), 200);
   }
 
   async breakdownTask(
@@ -153,9 +160,7 @@ export class AiEstimatorService {
     project: Project
   ): Promise<Subtask[]> {
     const prompt = this.buildBreakdownPrompt(taskDto, project);
-    const model = this.configService.get<string>('OPENAI_MODEL', 'gpt-4-turbo');
-
-    this.logger.log(`Sending breakdown request to ${model}...`);
+    const model = this.configService.get<string>('OPENAI_MODEL', 'gpt-4o');
 
     try {
       const response = await this.openai.chat.completions.create({
@@ -166,121 +171,124 @@ export class AiEstimatorService {
       });
 
       const content = response.choices[0].message.content;
-      this.logger.log(`Received breakdown response from AI: ${content}`);
-
-      if (!content) {
-        this.logger.error('AI breakdown response content is null');
-        throw new Error('Failed to get a breakdown response from AI.');
-      }
+      if (!content) throw new Error('Empty breakdown response');
 
       const parsed = JSON.parse(content);
-      // TODO: Add validation for the parsed JSON structure
       return parsed.subtasks as Subtask[];
     } catch (error) {
-      this.logger.error('Error getting breakdown from OpenAI', error.stack);
-      throw new Error('Failed to get breakdown from AI.');
+      this.logger.error('Failed to get AI breakdown', error.stack);
+      throw new Error('AI breakdown failed');
     }
   }
 
   private async getCorrectedEstimate(
-    originalEstimate: number,
+    original: number,
     taskDto: CreateTaskDto
-  ): Promise<number> {
-    const similarTasks = await this.taskRepository
+  ): Promise<{ correctedEstimate: number; averageError: number }> {
+    const tasks = await this.taskRepository
       .createQueryBuilder('task')
       .leftJoinAndSelect('task.estimates', 'estimate')
       .leftJoinAndSelect('task.feedbacks', 'feedback')
-      .where('task.technology LIKE :technology', {
-        technology: `%${taskDto.technology}%`,
-      })
-      .andWhere('task.experienceLevel = :experienceLevel', {
-        experienceLevel: taskDto.experienceLevel,
-      })
+      .where('task.technology LIKE :tech', { tech: `%${taskDto.technology}%` })
+      .andWhere('task.experienceLevel = :exp', { exp: taskDto.experienceLevel })
       .andWhere('estimate.source = :source', { source: EstimateSource.AI })
       .andWhere('feedback.actualHours IS NOT NULL')
       .limit(10)
       .getMany();
 
-    let totalError = 0;
-    let feedbackCount = 0;
+    let errorSum = 0;
+    let count = 0;
 
-    for (const task of similarTasks) {
+    for (const task of tasks) {
       const aiEstimate = task.estimates.find(
         (e) => e.source === EstimateSource.AI
       );
-      const feedbacksWithActual = task.feedbacks.filter(
-        (f) => f.actualHours != null
-      );
-      if (aiEstimate && feedbacksWithActual.length > 0) {
-        // Average error for all task feedbacks
-        const avgActual =
-          feedbacksWithActual.reduce((sum, f) => sum + f.actualHours, 0) /
-          feedbacksWithActual.length;
+      const feedbacks = task.feedbacks.filter((f) => f.actualHours != null);
 
-        totalError += avgActual - aiEstimate.finalEstimate;
-        feedbackCount++;
+      if (aiEstimate && feedbacks.length > 0) {
+        const avgActual =
+          feedbacks.reduce((s, f) => s + f.actualHours, 0) / feedbacks.length;
+        errorSum += avgActual - aiEstimate.finalEstimate;
+        count++;
       }
     }
 
-    if (feedbackCount === 0) return originalEstimate;
+    if (count === 0) {
+      return { correctedEstimate: original, averageError: 0 };
+    }
 
-    const averageError = totalError / feedbackCount;
-    const correctedEstimate = originalEstimate + averageError;
+    const averageError = errorSum / count;
+    const correctedEstimate = original + averageError;
 
-    this.logger.log(
-      `Original estimate: ${originalEstimate}, Corrected estimate: ${correctedEstimate}`
-    );
-
-    return Math.max(0.5, correctedEstimate);
+    return {
+      correctedEstimate: Math.max(0.25, correctedEstimate),
+      averageError,
+    };
   }
 
   private parseEstimate(content: string): number {
     const text = content.toLowerCase();
     const numbers = text.match(/\d+(\.\d+)?/g);
-
-    if (!numbers) {
-      return 0;
-    }
-
+    if (!numbers) return 0;
     const value = parseFloat(numbers[0]);
 
-    if (text.includes('week') || text.includes('weeks')) {
-      return value * 40; // 40 hours in a work week
-    }
-
-    if (text.includes('day') || text.includes('days')) {
-      return value * 8; // 8 hours in a work day
-    }
-
-    // By default, we assume this is in hours
+    if (/week/.test(text)) return value * 40;
+    if (/day/.test(text)) return value * 8;
     return value;
   }
 
-  private calculateConfidence(description: string): number {
-    const length = description.length;
-    if (length < 50) return 0.6;
-    if (length < 100) return 0.75;
-    return 0.9;
+  private calculateConfidence(args: {
+    description: string;
+    divergence: number;
+    historicalError: number;
+    manualEstimate?: number;
+    aiEstimate: number;
+  }): number {
+    let confidence = 1.0; // Start with perfect confidence
+
+    // 1. Penalize for high divergence between top-down and bottom-up
+    if (args.divergence > 0.5) confidence -= 0.25;
+    else if (args.divergence > 0.25) confidence -= 0.1;
+
+    // 2. Penalize for historical inaccuracy
+    const absError = Math.abs(args.historicalError);
+    if (absError > 4) confidence -= 0.2;
+    else if (absError > 2) confidence -= 0.1;
+
+    // 3. Adjust based on description quality
+    const descLen = args.description.length;
+    if (descLen < 50) confidence -= 0.2;
+    else if (descLen < 100) confidence -= 0.1;
+
+    if (!/api|ui|test|database|баз данных/i.test(args.description)) {
+      confidence -= 0.05; // Penalize if no tech keywords
+    }
+
+    // 4. Penalize for disagreement with manual estimate, if provided
+    if (args.manualEstimate) {
+      const manualDivergence =
+        Math.abs(args.aiEstimate - args.manualEstimate) / args.manualEstimate;
+      if (manualDivergence > 0.5) confidence -= 0.2;
+      else if (manualDivergence > 0.25) confidence -= 0.1;
+    }
+
+    return Math.max(0.1, Math.min(0.99, confidence)); // Clamp between 10% and 99%
   }
 
   private buildPrompt(taskDto: CreateTaskDto, project: Project): string {
     return `
-      You are an expert software engineer specializing in effort estimation.
-      Your task is to estimate the number of hours required to complete a task.
+  You are a senior software engineer estimating development tasks.
+  Your goal is to give a realistic time estimate in hours for completing the described task.
 
-      Project Context:
-      - Complexity: ${project.complexity}
+  Project complexity: ${project.complexity}
+  Task title: ${taskDto.title}
+  Task description: ${taskDto.description}
+  Required technology: ${taskDto.technology}
+  Developer experience level: ${taskDto.experienceLevel}
 
-      Task Details:
-      - Title: ${taskDto.title}
-      - Description: ${taskDto.description}
-      - Technology: ${taskDto.technology}
-      - Developer Experience: ${taskDto.experienceLevel}
-
-      Based on these details, provide a single, numeric estimate of the hours required.
-      Do not add any text, just the number.
-      Example: 8.5
-    `;
+  Estimate the time required to complete this task, considering best practices and potential blockers.
+  Respond with a single number representing the estimated hours (e.g. 7.5). Do not include any explanation.
+`;
   }
 
   private buildBreakdownPrompt(
@@ -288,30 +296,40 @@ export class AiEstimatorService {
     project: Project
   ): string {
     return `
-      You are an expert software engineer. Your task is to break down a larger task into smaller, manageable subtasks and estimate each one.
+You are a senior software engineer assisting in granular task planning.
 
-      Project Context:
-      - Complexity: ${project.complexity}
+Context:
+- Project Complexity: ${project.complexity}
+- Technology: ${taskDto.technology}
+- Experience Level: ${taskDto.experienceLevel}
 
-      Main Task Details:
-      - Title: ${taskDto.title}
-      - Description: ${taskDto.description}
-      - Technology: ${taskDto.technology}
-      - Developer Experience: ${taskDto.experienceLevel}
+Main Task:
+- Title: ${taskDto.title}
+- Description: ${taskDto.description}
 
-      Instructions:
-      1. Analyze the main task and identify 3-5 key subtasks required for completion.
-      2. For each subtask, provide a clear title, a brief description (1-2 sentences), and an estimated number of hours.
-      3. Return the result as a JSON object with a single key "subtasks", which is an array of objects. Each object should have "title", "description", and "estimateHours" (numeric) fields.
+Instructions:
+1. Break the task into 3–6 independent **developer-level subtasks** (not epics, not vague goals).
+2. Each subtask must be:
+   - small enough to complete in under 1 day
+   - clearly scoped and testable
+   - in the same technical stack (unless integration is needed)
+3. Prefer action-oriented verbs: "Implement", "Setup", "Refactor", "Write tests", "Integrate", etc.
+4. Each subtask must include:
+   - "title": concise string
+   - "description": 1–2 sentence goal and what’s expected
+   - "estimateHours": realistic hours for a developer of specified experience
 
-      Example JSON Output:
-      {
-        "subtasks": [
-          { "title": "Set up database schema", "description": "Create tables and relationships for the new feature.", "estimateHours": 4 },
-          { "title": "Build API endpoints", "description": "Develop CRUD endpoints for the feature.", "estimateHours": 6.5 },
-          { "title": "Implement frontend UI", "description": "Create the user interface components.", "estimateHours": 8 }
-        ]
-      }
-    `;
+Return a **valid JSON** in this shape:
+{
+  "subtasks": [
+    {
+      "title": "Setup GraphQL schema",
+      "description": "Define types and queries for user registration.",
+      "estimateHours": 2.5
+    },
+    ...
+  ]
+}
+  `.trim();
   }
 }

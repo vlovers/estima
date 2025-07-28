@@ -15,10 +15,14 @@ export const useFetchProjects = () => {
   });
 };
 
-export const useFetchProject = (projectId: string | undefined) => {
+export const useFetchProject = (
+  projectId: string | undefined,
+  sortBy?: string,
+  sortOrder?: string
+) => {
   return useQuery<Project, Error>({
-    queryKey: ['project', projectId],
-    queryFn: () => fetchProject(projectId!),
+    queryKey: ['project', projectId, sortBy, sortOrder],
+    queryFn: () => fetchProject(projectId!, sortBy, sortOrder, { tree: true }),
     enabled: !!projectId,
   });
 };

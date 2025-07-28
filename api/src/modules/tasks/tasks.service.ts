@@ -1,6 +1,8 @@
+import { CreateEstimateDto } from '../estimates/dto/create-estimate.dto';
 import { AiEstimatorService } from '../ai-estimator/ai-estimator.service';
 import { EstimateSource } from '../estimates/entities/estimate.entity';
 import { EstimatesService } from '../estimates/estimates.service';
+import { Subtask } from '../ai-estimator/ai-estimator.service';
 import { ProjectsService } from '../projects/projects.service';
 import { Project } from '../projects/entities/project.entity';
 import { UpdateTaskDto } from './dto/update-task.dto';
@@ -13,10 +15,13 @@ import {
   ForbiddenException,
   NotFoundException,
   Injectable,
+  Logger,
 } from '@nestjs/common';
 
 @Injectable()
 export class TasksService {
+  private readonly logger = new Logger(TasksService.name);
+
   constructor(
     @InjectRepository(Task)
     private readonly taskRepository: Repository<Task>,
@@ -38,35 +43,55 @@ export class TasksService {
       return this.breakdownAndCreateTasks(createTaskDto, project, userId);
     }
 
-    return this.createSingleTask(createTaskDto, project, userId);
+    return this.createTaskWithEstimate(createTaskDto, project, userId);
   }
 
-  private async createSingleTask(
-    createTaskDto: CreateTaskDto,
+  private async createTaskWithEstimate(
+    dto: CreateTaskDto,
     project: Project,
-    userId: string
+    userId: string,
+    parentTask?: Task
   ): Promise<Task> {
-    const { projectId, useAiEstimate, breakdown, ...taskData } = createTaskDto;
+    const { projectId, manualEstimate, useAiEstimate, breakdown, ...taskData } =
+      dto;
 
     const task = this.taskRepository.create({
       ...taskData,
+      parentTask,
       project: { id: projectId } as any,
     });
+
     await this.taskRepository.save(task);
 
-    if (createTaskDto.useAiEstimate) {
-      const aiEstimate = await this.aiEstimatorService.estimateTask(
-        createTaskDto,
-        project
-      );
+    const estimateData: Partial<CreateEstimateDto> = {
+      taskId: task.id,
+    };
 
-      await this.estimatesService.create({
-        finalEstimate: aiEstimate.finalEstimate,
-        confidence: aiEstimate.confidence,
-        explanation: aiEstimate.explanation,
-        source: EstimateSource.AI,
-        taskId: task.id,
-      });
+    if (manualEstimate) {
+      estimateData.manualEstimate = manualEstimate;
+      estimateData.source = EstimateSource.MANUAL;
+    }
+
+    if (useAiEstimate && !breakdown) {
+      try {
+        const aiEstimate = await this.aiEstimatorService.estimateTask(
+          dto,
+          project
+        );
+        estimateData.finalEstimate = aiEstimate.finalEstimate;
+        estimateData.confidence = aiEstimate.confidence;
+        estimateData.explanation = aiEstimate.explanation;
+        estimateData.source = EstimateSource.AI;
+      } catch (error) {
+        this.logger.error(
+          `AI estimate failed for task ${task.id}`,
+          error.stack
+        );
+      }
+    }
+
+    if (Object.keys(estimateData).length > 1) {
+      await this.estimatesService.create(estimateData as CreateEstimateDto);
     }
 
     return (await this.findOne(task.id, userId))!;
@@ -79,54 +104,81 @@ export class TasksService {
   ): Promise<Task[]> {
     const { projectId, useAiEstimate, breakdown, ...taskData } = createTaskDto;
 
+    // 1. Создаём родительский таск без AI estimate
     const parentTask = this.taskRepository.create({
       ...taskData,
       project: { id: projectId } as any,
     });
-    await this.taskRepository.save(parentTask);
-
-    const subtaskDtos = await this.aiEstimatorService.breakdownTask(
-      createTaskDto,
-      project
-    );
+    const parentTaskSaved = await this.taskRepository.save(parentTask);
 
     const createdSubtasks: Task[] = [];
     let totalEstimate = 0;
+    let subtaskItems: Subtask[] = [];
+    const confidenceScores: number[] = [];
 
-    for (const subtaskDto of subtaskDtos) {
-      const subtask = this.taskRepository.create({
-        title: subtaskDto.title,
-        description: subtaskDto.description,
-        parentTask: parentTask,
-        project: { id: projectId } as any,
-        technology: createTaskDto.technology,
-        experienceLevel: createTaskDto.experienceLevel,
-        tags: createTaskDto.tags,
-      });
-      await this.taskRepository.save(subtask);
+    // 3. Create subtasks if breakdown is requested
+    if (createTaskDto.breakdown) {
+      subtaskItems = await this.aiEstimatorService.breakdownTask(
+        createTaskDto,
+        project
+      );
 
-      totalEstimate += subtaskDto.estimateHours;
+      for (const subtaskData of subtaskItems) {
+        const subtaskDto: CreateTaskDto = {
+          ...createTaskDto,
+          title: subtaskData.title,
+          description: subtaskData.description,
+          breakdown: false,
+          manualEstimate: undefined,
+        };
 
-      await this.estimatesService.create({
-        finalEstimate: subtaskDto.estimateHours,
-        source: EstimateSource.AI,
-        taskId: subtask.id,
-        // Confidence is not provided by the breakdown endpoint, can be added later
-      });
+        const subtaskEstimate = await this.aiEstimatorService.estimateTask(
+          subtaskDto,
+          project
+        );
 
-      createdSubtasks.push((await this.findOne(subtask.id, userId))!);
+        const subtask = this.taskRepository.create({
+          title: subtaskDto.title,
+          description: subtaskDto.description,
+          technology: subtaskDto.technology,
+          experienceLevel: subtaskDto.experienceLevel,
+          tags: subtaskDto.tags,
+          project: { id: project.id },
+          parentTask: { id: parentTaskSaved.id },
+        });
+        await this.taskRepository.save(subtask);
+
+        await this.estimatesService.create({
+          ...subtaskEstimate,
+          taskId: subtask.id,
+        });
+
+        createdSubtasks.push((await this.findOne(subtask.id, userId))!);
+        totalEstimate += subtaskEstimate.finalEstimate;
+        if (subtaskEstimate.confidence) {
+          confidenceScores.push(subtaskEstimate.confidence);
+        }
+      }
     }
 
+    // 4. Update parent task's estimate if subtasks were created
     if (totalEstimate > 0) {
-      await this.estimatesService.create({
+      const averageConfidence = confidenceScores.length
+        ? confidenceScores.reduce((a, b) => a + b, 0) / confidenceScores.length
+        : undefined;
+
+      const estimateDto: CreateEstimateDto = {
+        taskId: parentTaskSaved.id,
         finalEstimate: totalEstimate,
-        source: EstimateSource.AI,
-        taskId: parentTask.id,
-        // Explanation could be added later for rollup
-      });
+        confidence: averageConfidence,
+        source: EstimateSource.AI_SUBTASK_SUM,
+        explanation: `Sum of ${subtaskItems.length} AI-estimated subtasks`,
+      };
+      await this.estimatesService.create(estimateDto);
     }
 
-    return createdSubtasks;
+    const resultTask = await this.findOne(parentTask.id, userId);
+    return [resultTask, ...createdSubtasks];
   }
 
   private async getTaskAndCheckPermissions(
@@ -135,7 +187,7 @@ export class TasksService {
   ): Promise<Task> {
     const task = await this.taskRepository.findOne({
       where: { id },
-      relations: ['project'],
+      relations: ['project', 'estimates', 'feedbacks', 'parentTask'],
     });
 
     if (!task) {
@@ -161,7 +213,19 @@ export class TasksService {
     userId: string
   ): Promise<Task> {
     const task = await this.getTaskAndCheckPermissions(id, userId);
-    await this.taskRepository.update(id, updateTaskDto);
+    const { manualEstimate, ...taskData } = updateTaskDto;
+
+    if (manualEstimate) {
+      await this.estimatesService.createOrUpdateManualEstimate(
+        id,
+        manualEstimate
+      );
+    }
+
+    if (Object.keys(taskData).length > 0) {
+      await this.taskRepository.update(id, taskData);
+    }
+
     return this.findOne(id, userId);
   }
 

@@ -16,26 +16,67 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
+let isRefreshing = false;
+let failedQueue = [];
+
+const processQueue = (error, token = null) => {
+  failedQueue.forEach((prom) => {
+    if (error) {
+      prom.reject(error);
+    } else {
+      prom.resolve(token);
+    }
+  });
+
+  failedQueue = [];
+};
+
 api.interceptors.response.use(
   (response) => response,
   async (error) => {
     const originalRequest = error.config;
+
+    if (originalRequest.url === '/auth/login') {
+      return Promise.reject(error);
+    }
+
     if (error.response.status === 401 && !originalRequest._retry) {
+      if (isRefreshing) {
+        return new Promise(function (resolve, reject) {
+          failedQueue.push({ resolve, reject });
+        })
+          .then((token) => {
+            originalRequest.headers['Authorization'] = 'Bearer ' + token;
+            return axios(originalRequest);
+          })
+          .catch((err) => {
+            return Promise.reject(err);
+          });
+      }
+
       originalRequest._retry = true;
+      isRefreshing = true;
+
       try {
         const { data } = await api.post('/auth/refresh');
-        localStorage.setItem('token', data.accessToken);
-        api.defaults.headers.common[
-          'Authorization'
-        ] = `Bearer ${data.accessToken}`;
+        const newAccessToken = data.accessToken;
+        localStorage.setItem('token', newAccessToken);
+        api.defaults.headers.common['Authorization'] =
+          'Bearer ' + newAccessToken;
+        originalRequest.headers['Authorization'] = 'Bearer ' + newAccessToken;
+        processQueue(null, newAccessToken);
         return api(originalRequest);
       } catch (refreshError) {
+        processQueue(refreshError, null);
         // For now, we'll just clear the token. In a real app, you'd dispatch a logout action.
         localStorage.removeItem('token');
         window.location.href = '/login';
         return Promise.reject(refreshError);
+      } finally {
+        isRefreshing = false;
       }
     }
+
     return Promise.reject(error);
   }
 );

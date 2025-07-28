@@ -5,7 +5,6 @@ import { AxiosError } from 'axios';
 
 import {
   createEstimateFeedback,
-  createEstimate,
   updateTask,
   createTask,
   deleteTask,
@@ -15,8 +14,9 @@ export const useCreateTaskMutation = (onSuccessCallback: () => void) => {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: createTask,
-    onSuccess: (data: Task) => {
-      queryClient.invalidateQueries({ queryKey: ['project', data.projectId] });
+    onSuccess: (data: Task | Task[]) => {
+      queryClient.invalidateQueries({ queryKey: ['project'] });
+
       notifications.show({
         title: 'Task Created',
         message: 'The new task has been successfully created.',
@@ -46,7 +46,7 @@ export const useDeleteTaskMutation = (
   return useMutation<void, Error, string>({
     mutationFn: deleteTask,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['project', projectId] });
+      queryClient.invalidateQueries({ queryKey: ['project'] });
       notifications.show({
         title: 'Task Deleted',
         message: 'The task has been successfully deleted.',
@@ -72,7 +72,7 @@ export const useUpdateTaskMutation = (
   return useMutation<Task, Error, UpdateTaskDto>({
     mutationFn: updateTask,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['project', projectId] });
+      queryClient.invalidateQueries({ queryKey: ['project'] });
       notifications.show({
         title: 'Task Updated',
         message: 'The task has been successfully updated.',
@@ -99,7 +99,7 @@ export const useCreateFeedbackMutation = (projectId: string | undefined) => {
   return useMutation<void, Error, { taskId: string; actualHours: number }>({
     mutationFn: createEstimateFeedback,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['project', projectId] });
+      queryClient.invalidateQueries({ queryKey: ['project'] });
       notifications.show({
         title: 'Feedback Submitted',
         message: 'Thank you! Your feedback will improve future estimates.',
@@ -120,14 +120,11 @@ export const useCreateManualEstimateMutation = (
   projectId: string | undefined
 ) => {
   const queryClient = useQueryClient();
-  return useMutation<
-    void,
-    Error,
-    { taskId: string; finalEstimate: number; source: 'manual' }
-  >({
-    mutationFn: createEstimate,
+  return useMutation<Task, Error, { taskId: string; hours: number }>({
+    mutationFn: (data) =>
+      updateTask({ id: data.taskId, manualEstimate: data.hours }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['project', projectId] });
+      queryClient.invalidateQueries({ queryKey: ['project'] });
       notifications.show({
         title: 'Success',
         message: 'Manual estimate saved successfully.',

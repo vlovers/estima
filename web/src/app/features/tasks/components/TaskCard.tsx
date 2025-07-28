@@ -1,5 +1,4 @@
 import { Task } from '../../../types';
-import { useMemo } from 'react';
 
 import {
   ActionIcon,
@@ -40,29 +39,11 @@ export function TaskCard({
   onFeedback,
   onManualEstimate,
 }: TaskCardProps) {
-  const totalEstimate = useMemo(() => {
-    const manualEstimate = task.estimates.find((e) => e.source === 'manual');
-    if (manualEstimate) return manualEstimate.finalEstimate;
-    return task.estimates.reduce(
-      (acc, est) => acc + (est.finalEstimate || 0),
-      0
-    );
-  }, [task.estimates]);
+  const estimate = task.estimates?.[0];
 
-  const estimateSource = useMemo(() => {
-    return task.estimates.some((e) => e.source === 'manual') ? 'Manual' : 'AI';
-  }, [task.estimates]);
+  const confidence = estimate?.confidence;
 
-  const confidence = useMemo(() => {
-    if (task.estimates.length === 0) return null;
-    const avgConfidence =
-      task.estimates.reduce((acc, est) => acc + (est.confidence || 0), 0) /
-      task.estimates.length;
-    return avgConfidence;
-  }, [task.estimates]);
-
-  const getConfidenceColor = (value: number | null) => {
-    if (value === null) return 'gray';
+  const getConfidenceColor = (value: number) => {
     if (value > 0.8) return 'green';
     if (value > 0.6) return 'yellow';
     return 'red';
@@ -71,45 +52,56 @@ export function TaskCard({
   return (
     <Card shadow="sm" padding="lg" radius="md" withBorder>
       <Stack>
-        <Group justify="space-between">
-          <Group>
-            {task.children && task.children.length > 0 && (
-              <ActionIcon onClick={onToggle} size="sm">
-                {isExpanded ? <IconChevronDown /> : <IconChevronRight />}
-              </ActionIcon>
-            )}
-            <Text fw={500}>{task.title}</Text>
+        <Card.Section withBorder inheritPadding py="xs">
+          <Group justify="space-between">
+            <Group>
+              {task.subtasks && task.subtasks.length > 0 && (
+                <ActionIcon onClick={onToggle} size="sm" variant="transparent">
+                  {isExpanded ? (
+                    <IconChevronDown size={16} />
+                  ) : (
+                    <IconChevronRight size={16} />
+                  )}
+                </ActionIcon>
+              )}
+              <Text fw={500}>{task.title}</Text>
+            </Group>
+            <Group gap="xs">
+              <Menu shadow="md" width={200}>
+                <Menu.Target>
+                  <ActionIcon variant="subtle" color="gray">
+                    <IconDotsVertical size={16} />
+                  </ActionIcon>
+                </Menu.Target>
+
+                <Menu.Dropdown>
+                  <Menu.Label>Actions</Menu.Label>
+                  <Menu.Item
+                    leftSection={<IconPencil size={14} />}
+                    onClick={() => onEdit(task)}
+                  >
+                    Edit Task
+                  </Menu.Item>
+                  <Menu.Item
+                    leftSection={<IconTrash size={14} />}
+                    color="red"
+                    onClick={() => onDelete(task)}
+                  >
+                    Delete Task
+                  </Menu.Item>
+                </Menu.Dropdown>
+              </Menu>
+            </Group>
           </Group>
-          <Menu shadow="md" width={200}>
-            <Menu.Target>
-              <ActionIcon variant="subtle">
-                <IconDotsVertical size={16} />
-              </ActionIcon>
-            </Menu.Target>
-            <Menu.Dropdown>
-              <Menu.Label>Actions</Menu.Label>
-              <Menu.Item
-                leftSection={<IconPencil size={14} />}
-                onClick={() => onEdit(task)}
-              >
-                Edit Task
-              </Menu.Item>
-              <Menu.Item
-                leftSection={<IconTrash size={14} />}
-                color="red"
-                onClick={() => onDelete(task)}
-              >
-                Delete Task
-              </Menu.Item>
-            </Menu.Dropdown>
-          </Menu>
-        </Group>
+        </Card.Section>
 
-        <Text size="sm" c="dimmed">
-          {task.description}
-        </Text>
+        {task.description && (
+          <Text size="sm" c="dimmed" mt="xs">
+            {task.description}
+          </Text>
+        )}
 
-        <Group>
+        <Group my="sm">
           {task.tags.map((tag) => (
             <Badge key={tag} variant="outline">
               {tag}
@@ -122,26 +114,35 @@ export function TaskCard({
           <Text size="sm">Experience: {task.experienceLevel}</Text>
         </Group>
 
-        <Group justify="space-between">
-          <Text size="sm" c="dimmed">
-            Estimate: {totalEstimate} hours ({estimateSource})
-          </Text>
-          {estimateSource === 'AI' && confidence !== null && (
+        <Group justify="space-between" mt="sm">
+          <Stack gap={0}>
+            {estimate?.finalEstimate != null && (
+              <Text size="sm" c="dimmed">
+                AI Estimate: {estimate.finalEstimate.toFixed(1)} hours
+              </Text>
+            )}
+            {estimate?.manualEstimate != null && (
+              <Text size="sm" c="dimmed">
+                Manual Estimate: {estimate.manualEstimate.toFixed(1)} hours
+              </Text>
+            )}
+          </Stack>
+          {confidence !== undefined && (
             <Badge color={getConfidenceColor(confidence)} variant="light">
               Confidence: {(confidence * 100).toFixed(0)}%
             </Badge>
           )}
         </Group>
 
-        <Group justify="space-between" mt="xs">
-          <ActionIcon
-            variant="subtle"
-            color="gray"
-            onClick={() => onManualEstimate(task)}
-            title="Set Manual Estimate"
-          >
-            <IconPencil size={16} />
-          </ActionIcon>
+        <Group justify="flex-end" mt="xs">
+          {/*<ActionIcon*/}
+          {/*  variant="subtle"*/}
+          {/*  color="gray"*/}
+          {/*  onClick={() => onManualEstimate(task)}*/}
+          {/*  title="Set Manual Estimate"*/}
+          {/*>*/}
+          {/*  <IconPencil size={16} />*/}
+          {/*</ActionIcon>*/}
 
           {task.feedbacks && task.feedbacks.length > 0 ? (
             <Text size="xs" c="dimmed">

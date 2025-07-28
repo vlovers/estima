@@ -4,6 +4,7 @@ import { ApiProperty } from '@nestjs/swagger';
 import {
   IsNotEmpty,
   IsOptional,
+  IsNumber,
   IsBoolean,
   IsString,
   IsEnum,
@@ -74,4 +75,12 @@ export class CreateTaskDto {
   @IsOptional()
   @IsBoolean()
   breakdown?: boolean;
+
+  @ApiProperty({
+    description: 'Manual estimate in hours',
+    required: false,
+  })
+  @IsOptional()
+  @IsNumber()
+  manualEstimate?: number;
 }

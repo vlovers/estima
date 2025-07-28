@@ -1,15 +1,24 @@
-import { ActionIcon, useMantineColorScheme, useComputedColorScheme } from '@mantine/core';
 import { IconSun, IconMoon } from '@tabler/icons-react';
 import classes from './ThemeSwitcher.module.css';
 import cx from 'clsx';
 
+import {
+  useComputedColorScheme,
+  useMantineColorScheme,
+  ActionIcon,
+} from '@mantine/core';
+
 export function ThemeSwitcher() {
   const { setColorScheme } = useMantineColorScheme();
-  const computedColorScheme = useComputedColorScheme('light', { getInitialValueInEffect: true });
+  const computedColorScheme = useComputedColorScheme('light', {
+    getInitialValueInEffect: true,
+  });
 
   return (
     <ActionIcon
-      onClick={() => setColorScheme(computedColorScheme === 'light' ? 'dark' : 'light')}
+      onClick={() =>
+        setColorScheme(computedColorScheme === 'light' ? 'dark' : 'light')
+      }
       variant="default"
       size="xl"
       aria-label="Toggle color scheme"

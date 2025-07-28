@@ -13,7 +13,9 @@ export class EstimateFeedback {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @ManyToOne(() => Task, (task) => task.feedbacks)
+  @ManyToOne(() => Task, (task) => task.feedbacks, {
+    onDelete: 'CASCADE',
+  })
   task: Task;
 
   @Column({ type: 'float', nullable: true })

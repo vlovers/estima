@@ -1,10 +1,11 @@
+import { EstimateSource } from '../../estimates/entities/estimate.entity';
 import { ApiProperty } from '@nestjs/swagger';
 
 import {
   IsOptional,
   IsNumber,
-  IsEnum,
   IsString,
+  IsEnum,
   Max,
   Min,
 } from 'class-validator';
@@ -15,8 +16,8 @@ export class EstimateDto {
     example: 'AI',
     description: 'Source of the estimate',
   })
-  @IsEnum(['AI', 'MANUAL', 'FINAL'])
-  source: 'AI' | 'MANUAL' | 'FINAL';
+  @IsEnum(EstimateSource)
+  source: EstimateSource;
 
   @ApiProperty({
     example: 5.5,

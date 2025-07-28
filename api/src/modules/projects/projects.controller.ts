@@ -1,3 +1,4 @@
+import { SortProjectTasksDto } from './dto/sort-project-tasks.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { UpdateProjectDto } from './dto/update-project.dto';
 import { CreateProjectDto } from './dto/create-project.dto';
@@ -57,14 +58,15 @@ export class ProjectsController {
 
   @Get(':id')
   @ApiOperation({ summary: 'Get a single project by ID' })
-  @ApiResponse({ status: 200, description: 'Return a single project.' })
+  @ApiResponse({ status: 200, description: 'Project found', type: Project })
   @ApiResponse({ status: 404, description: 'Project not found' })
   findOne(
     @Param('id', ParseUUIDPipe) id: string,
     @Request() req,
-    @Query('tree') tree?: boolean
+    @Query('tree') tree?: boolean,
+    @Query() sortDto?: SortProjectTasksDto
   ) {
-    return this.projectsService.findOne(id, req.user.userId, tree);
+    return this.projectsService.findOne(id, req.user.userId, tree, sortDto);
   }
 
   @Patch(':id')

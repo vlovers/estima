@@ -26,7 +26,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
           withNormalizeCSS
           defaultColorScheme="auto"
         >
-          <Notifications />
+          <Notifications position="bottom-right" />
           <BrowserRouter>
             <App />
           </BrowserRouter>

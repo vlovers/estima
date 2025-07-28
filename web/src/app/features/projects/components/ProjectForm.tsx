@@ -76,8 +76,8 @@ export function ProjectForm({
       />
       <NumberInput
         withAsterisk
-        label="Overhead (in hours)"
-        placeholder="Enter overhead"
+        label="Overhead (%)"
+        placeholder="Enter overhead percentage"
         {...form.getInputProps('overhead')}
         mt="md"
         min={0}

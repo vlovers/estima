@@ -1,5 +1,6 @@
 import { UpdateEstimateDto } from './dto/update-estimate.dto';
 import { CreateEstimateDto } from './dto/create-estimate.dto';
+import { EstimateSource } from './entities/estimate.entity';
 import { Estimate } from './entities/estimate.entity';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Injectable } from '@nestjs/common';
@@ -61,5 +62,28 @@ export class EstimatesService {
 
   async remove(id: string) {
     return this.estimateRepository.delete(id);
+  }
+
+  async createOrUpdateManualEstimate(
+    taskId: string,
+    hours: number
+  ): Promise<Estimate> {
+    const existingEstimate = await this.estimateRepository.findOne({
+      where: {
+        task: { id: taskId },
+      },
+    });
+
+    if (existingEstimate) {
+      existingEstimate.manualEstimate = hours;
+      return this.estimateRepository.save(existingEstimate);
+    }
+
+    const newEstimate = this.estimateRepository.create({
+      task: { id: taskId },
+      manualEstimate: hours,
+      source: EstimateSource.MANUAL,
+    });
+    return this.estimateRepository.save(newEstimate);
   }
 }

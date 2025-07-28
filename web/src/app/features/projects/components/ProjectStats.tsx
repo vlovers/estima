@@ -11,7 +11,10 @@ export function ProjectStats({ project }: ProjectStatsProps) {
   const totalTasks = project.tasks.length;
   const totalHours = project.tasks
     .flatMap((t) => t.estimates)
-    .reduce((acc, est) => acc + (est.finalEstimate || 0), 0);
+    .reduce(
+      (acc, est) => acc + (est.manualEstimate ?? est.finalEstimate ?? 0),
+      0
+    );
 
   return (
     <Grid>
@@ -39,7 +42,7 @@ export function ProjectStats({ project }: ProjectStatsProps) {
                 Total Estimated Hours
               </Text>
               <Text fw={700} size="xl">
-                {totalHours}
+                {totalHours.toFixed(1)}
               </Text>
             </div>
           </Group>
