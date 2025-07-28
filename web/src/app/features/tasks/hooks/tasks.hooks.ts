@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { UpdateTaskDto, Task, Clarification } from '../../../types';
 import { notifications } from '@mantine/notifications';
-import { UpdateTaskDto, Task } from '../../../types';
 import { AxiosError } from 'axios';
 
 import {
@@ -8,6 +8,7 @@ import {
   updateTask,
   createTask,
   deleteTask,
+  clarifyTask,
 } from '../api/tasks.api';
 
 export const useCreateTaskMutation = (onSuccessCallback: () => void) => {
@@ -138,6 +139,47 @@ export const useCreateManualEstimateMutation = (
           : 'Failed to save manual estimate.';
       notifications.show({
         title: 'Error',
+        message,
+        color: 'red',
+      });
+    },
+  });
+};
+
+export const useClarifyTaskMutation = (onSuccessCallback?: () => void) => {
+  const queryClient = useQueryClient();
+  return useMutation<
+    Task,
+    Error,
+    { id: string; clarifications: Clarification[] }
+  >({
+    mutationFn: clarifyTask,
+    onSuccess: (updatedTask) => {
+      queryClient.invalidateQueries({ queryKey: ['project'] });
+
+      if (updatedTask.status === 'ESTIMATED') {
+        notifications.show({
+          title: 'Task Clarified',
+          message: 'The task has been updated with a new AI estimate.',
+          color: 'green',
+        });
+        onSuccessCallback?.(); // This will close the modal
+      } else {
+        // AI has more questions, do not close the modal
+        notifications.show({
+          title: 'More Information Needed',
+          message: 'The AI has additional questions based on your answers.',
+          color: 'blue',
+        });
+      }
+    },
+    onError: (error: unknown) => {
+      const message =
+        error instanceof AxiosError
+          ? error.response?.data?.message
+          : 'Failed to clarify task.';
+      notifications.show({
+        title: 'Clarification Failed',
         message,
         color: 'red',
       });

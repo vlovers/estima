@@ -58,6 +58,19 @@ export class CreateTaskDto {
   experienceLevel: ExperienceLevel;
 
   @ApiProperty({
+    description: 'Whether to break down the task into sub-tasks',
+    default: true,
+  })
+  @IsBoolean()
+  @IsOptional()
+  breakdown?: boolean;
+
+  @ApiProperty({ example: 8, description: "User's manual estimate in hours" })
+  @IsNumber()
+  @IsOptional()
+  manualEstimate?: number;
+
+  @ApiProperty({
     example: true,
     description: 'Use AI to estimate task duration',
     required: false,
@@ -68,19 +81,18 @@ export class CreateTaskDto {
   useAiEstimate?: boolean;
 
   @ApiProperty({
-    description: 'Flag to break down the task into subtasks',
-    required: false,
+    description: 'Whether to generate a manager note for the task',
     default: false,
   })
-  @IsOptional()
   @IsBoolean()
-  breakdown?: boolean;
+  @IsOptional()
+  generateManagerNote?: boolean;
 
   @ApiProperty({
-    description: 'Manual estimate in hours',
-    required: false,
+    description: 'Whether to generate a risk analysis for the task',
+    default: false,
   })
+  @IsBoolean()
   @IsOptional()
-  @IsNumber()
-  manualEstimate?: number;
+  generateRiskAnalysis?: boolean;
 }

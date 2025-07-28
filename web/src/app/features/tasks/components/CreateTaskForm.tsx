@@ -5,7 +5,7 @@ import { useState } from 'react';
 import {
   SegmentedControl,
   NumberInput,
-  MultiSelect,
+  TagsInput,
   TextInput,
   Textarea,
   Switch,
@@ -25,6 +25,8 @@ const initialValues: Omit<CreateTaskDto, 'projectId'> = {
   useAiEstimate: true,
   breakdown: false,
   manualEstimate: 0,
+  generateManagerNote: false,
+  generateRiskAnalysis: false,
 };
 
 interface CreateTaskFormProps {
@@ -117,15 +119,12 @@ export function CreateTaskForm({ projectId, onSuccess }: CreateTaskFormProps) {
                 value={formValues.experienceLevel}
                 onChange={(value) => handleFormChange('experienceLevel', value)}
               />
-              <MultiSelect
+              <TagsInput
                 label="Tags"
-                data={formValues.tags}
                 placeholder="e.g., security, frontend"
-                searchable
-                creatable
-                getCreateLabel={(query) => `+ Create ${query}`}
-                onChange={(value) => handleFormChange('tags', value)}
                 value={formValues.tags}
+                onChange={(value) => handleFormChange('tags', value)}
+                clearable
               />
               <Group grow>
                 <Switch
@@ -143,6 +142,28 @@ export function CreateTaskForm({ projectId, onSuccess }: CreateTaskFormProps) {
                   checked={formValues.breakdown}
                   onChange={(event) =>
                     handleFormChange('breakdown', event.currentTarget.checked)
+                  }
+                />
+              </Group>
+              <Group grow>
+                <Switch
+                  label="Generate Manager's Note"
+                  checked={formValues.generateManagerNote}
+                  onChange={(event) =>
+                    handleFormChange(
+                      'generateManagerNote',
+                      event.currentTarget.checked
+                    )
+                  }
+                />
+                <Switch
+                  label="Generate Risk Analysis"
+                  checked={formValues.generateRiskAnalysis}
+                  onChange={(event) =>
+                    handleFormChange(
+                      'generateRiskAnalysis',
+                      event.currentTarget.checked
+                    )
                   }
                 />
               </Group>

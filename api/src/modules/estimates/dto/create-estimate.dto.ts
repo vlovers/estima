@@ -40,6 +40,14 @@ export class CreateEstimateDto {
   explanation?: string;
 
   @ApiProperty({
+    example: 'High-level summary for non-tech stakeholders.',
+    required: false,
+  })
+  @IsString()
+  @IsOptional()
+  managerExplanation?: string;
+
+  @ApiProperty({
     enum: EstimateSource,
     example: EstimateSource.AI,
     description: 'Source of the estimate',

@@ -4,7 +4,6 @@ import { Project } from '../projects/entities/project.entity';
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Task } from '../tasks/entities/task.entity';
-import { EstimateDto } from './dto/estimate.dto';
 import { ConfigService } from '@nestjs/config';
 import { Repository } from 'typeorm';
 import OpenAI from 'openai';
@@ -13,7 +12,25 @@ export interface Subtask {
   title: string;
   description: string;
   estimateHours: number;
+  explanation: string;
 }
+
+export interface AiEstimateResponse {
+  subtasks: Subtask[];
+  risks: { risk: string; mitigation: string }[];
+  managerNote?: string;
+  questions: null;
+}
+
+export interface AiQuestionsResponse {
+  subtasks: null;
+  risks: null;
+  questions: string[];
+}
+
+export type AiAnalysisResult =
+  | { type: 'estimate'; data: AiEstimateResponse }
+  | { type: 'questions'; data: AiQuestionsResponse };
 
 @Injectable()
 export class AiEstimatorService {
@@ -30,81 +47,75 @@ export class AiEstimatorService {
     });
   }
 
-  async estimateTask(
+  async createInitialAnalysis(
     taskDto: CreateTaskDto,
     project: Project
-  ): Promise<EstimateDto> {
+  ): Promise<AiAnalysisResult> {
+    return this.getAiAnalysis(taskDto, project);
+  }
+
+  async getAiAnalysis(
+    taskDto: CreateTaskDto,
+    project: Project,
+    history: { question: string; answer: string }[] = []
+  ): Promise<AiAnalysisResult> {
+    // If the description is too short and we are not in a clarification cycle, force questions.
+    const isVague =
+      (taskDto.description?.length ?? 0) < 50 && history.length === 0;
+
+    const prompt = isVague
+      ? this.buildClarificationRequestPrompt(taskDto)
+      : this.buildEstimationPrompt(taskDto, project, history);
+
     const model = this.configService.get<string>('OPENAI_MODEL', 'gpt-4o');
 
-    const explanationLog: string[] = [];
+    try {
+      const response = await this.openai.chat.completions.create({
+        model,
+        messages: [{ role: 'user', content: prompt }],
+        temperature: 0.3,
+        response_format: { type: 'json_object' },
+      });
 
-    // 1. Top-down estimate
-    const topDownPrompt = this.buildPrompt(taskDto, project);
-    const topDown = await this.requestEstimateOnly(topDownPrompt, model);
-    explanationLog.push(`Top-down: ${topDown}h`);
+      const content = response.choices[0].message.content;
+      if (!content) throw new Error('Empty AI response');
 
-    // 2. Bottom-up estimate
-    const subtasks = await this.breakdownTask(taskDto, project);
-    const bottomUp = subtasks.reduce((sum, st) => sum + st.estimateHours, 0);
-    explanationLog.push(`Bottom-up (subtasks sum): ${bottomUp}h`);
+      const parsed = JSON.parse(content) as
+        | AiEstimateResponse
+        | AiQuestionsResponse;
 
-    // 3. Learn from past estimates
-    const { correctedEstimate, averageError } = await this.getCorrectedEstimate(
-      bottomUp,
-      taskDto
-    );
-    explanationLog.push(
-      `Corrected by feedback (avg error ${averageError.toFixed(
-        1
-      )}h): ${correctedEstimate.toFixed(1)}h`
-    );
+      if (parsed.questions && parsed.questions.length > 0) {
+        return { type: 'questions', data: parsed as AiQuestionsResponse };
+      }
 
-    // 4. Apply context-based modifiers
-    const adjusted = this.applyModifiers(
-      correctedEstimate,
-      taskDto,
-      project,
-      explanationLog
-    );
+      if (parsed.subtasks && parsed.subtasks.length > 0) {
+        return { type: 'estimate', data: parsed as AiEstimateResponse };
+      }
 
-    // 5. Mismatch warning & Confidence calculation
-    const divergence =
-      bottomUp > 0 ? Math.abs(topDown - bottomUp) / bottomUp : 0;
-    if (divergence > 0.4) {
-      explanationLog.push(`⚠️ High divergence: ${topDown}h vs ${bottomUp}h`);
+      throw new Error('Invalid AI response structure');
+    } catch (error) {
+      this.logger.error('Failed to get AI analysis', error.stack);
+      throw error;
     }
-
-    // 6. Final cleanup
-    const final = this.sanitize(adjusted);
-    explanationLog.push(`Final sanitized: ${final}h`);
-
-    const estimate = new EstimateDto();
-    estimate.finalEstimate = final;
-    estimate.confidence = this.calculateConfidence({
-      description: taskDto.description,
-      divergence,
-      historicalError: averageError,
-      manualEstimate: taskDto.manualEstimate,
-      aiEstimate: final,
-    });
-    estimate.source = EstimateSource.AI;
-    estimate.explanation = explanationLog.join('\n');
-
-    return estimate;
   }
 
   private async requestEstimateOnly(
     prompt: string,
     model: string
   ): Promise<number> {
-    const res = await this.openai.chat.completions.create({
-      model,
-      messages: [{ role: 'user', content: prompt }],
-      temperature: 0.2,
-      max_tokens: 10,
-    });
-    const content = res.choices[0].message.content;
-    return this.parseEstimate(content ?? '');
+    try {
+      const res = await this.openai.chat.completions.create({
+        model,
+        messages: [{ role: 'user', content: prompt }],
+        temperature: 0.2,
+        max_tokens: 10,
+      });
+      const content = res.choices[0].message.content;
+      return this.parseEstimate(content ?? '');
+    } catch (error) {
+      this.logger.error('Failed to get AI estimate', error.stack);
+      return 0;
+    }
   }
 
   private applyModifiers(
@@ -155,37 +166,11 @@ export class AiEstimatorService {
     return Math.min(Math.max(0.25, parseFloat(val.toFixed(1))), 200);
   }
 
-  async breakdownTask(
-    taskDto: CreateTaskDto,
-    project: Project
-  ): Promise<Subtask[]> {
-    const prompt = this.buildBreakdownPrompt(taskDto, project);
-    const model = this.configService.get<string>('OPENAI_MODEL', 'gpt-4o');
-
-    try {
-      const response = await this.openai.chat.completions.create({
-        model,
-        messages: [{ role: 'user', content: prompt }],
-        temperature: 0.2,
-        response_format: { type: 'json_object' },
-      });
-
-      const content = response.choices[0].message.content;
-      if (!content) throw new Error('Empty breakdown response');
-
-      const parsed = JSON.parse(content);
-      return parsed.subtasks as Subtask[];
-    } catch (error) {
-      this.logger.error('Failed to get AI breakdown', error.stack);
-      throw new Error('AI breakdown failed');
-    }
-  }
-
   private async getCorrectedEstimate(
     original: number,
     taskDto: CreateTaskDto
-  ): Promise<{ correctedEstimate: number; averageError: number }> {
-    const tasks = await this.taskRepository
+  ): Promise<{ correctedEstimate: number; averageErrorRatio: number }> {
+    const similarTasks = await this.taskRepository
       .createQueryBuilder('task')
       .leftJoinAndSelect('task.estimates', 'estimate')
       .leftJoinAndSelect('task.feedbacks', 'feedback')
@@ -193,37 +178,46 @@ export class AiEstimatorService {
       .andWhere('task.experienceLevel = :exp', { exp: taskDto.experienceLevel })
       .andWhere('estimate.source = :source', { source: EstimateSource.AI })
       .andWhere('feedback.actualHours IS NOT NULL')
-      .limit(10)
+      .orderBy('task.createdAt', 'DESC')
+      .limit(20)
       .getMany();
 
-    let errorSum = 0;
+    if (similarTasks.length < 3) {
+      // Not enough data for a meaningful correction
+      return { correctedEstimate: original, averageErrorRatio: 0 };
+    }
+
+    let totalErrorRatio = 0;
     let count = 0;
 
-    for (const task of tasks) {
+    for (const task of similarTasks) {
       const aiEstimate = task.estimates.find(
         (e) => e.source === EstimateSource.AI
       );
-      const feedbacks = task.feedbacks.filter((f) => f.actualHours != null);
+      const feedback = task.feedbacks[0];
 
-      if (aiEstimate && feedbacks.length > 0) {
-        const avgActual =
-          feedbacks.reduce((s, f) => s + f.actualHours, 0) / feedbacks.length;
-        errorSum += avgActual - aiEstimate.finalEstimate;
+      if (
+        aiEstimate &&
+        aiEstimate.finalEstimate > 0 &&
+        feedback &&
+        feedback.actualHours > 0
+      ) {
+        const errorRatio =
+          (feedback.actualHours - aiEstimate.finalEstimate) /
+          aiEstimate.finalEstimate;
+        totalErrorRatio += errorRatio;
         count++;
       }
     }
 
     if (count === 0) {
-      return { correctedEstimate: original, averageError: 0 };
+      return { correctedEstimate: original, averageErrorRatio: 0 };
     }
 
-    const averageError = errorSum / count;
-    const correctedEstimate = original + averageError;
+    const averageErrorRatio = totalErrorRatio / count;
+    const correctedEstimate = original * (1 + averageErrorRatio);
 
-    return {
-      correctedEstimate: Math.max(0.25, correctedEstimate),
-      averageError,
-    };
+    return { correctedEstimate, averageErrorRatio };
   }
 
   private parseEstimate(content: string): number {
@@ -244,7 +238,7 @@ export class AiEstimatorService {
     manualEstimate?: number;
     aiEstimate: number;
   }): number {
-    let confidence = 1.0; // Start with perfect confidence
+    let confidence = 0.99; // Start high
 
     // 1. Penalize for high divergence between top-down and bottom-up
     if (args.divergence > 0.5) confidence -= 0.25;
@@ -252,8 +246,8 @@ export class AiEstimatorService {
 
     // 2. Penalize for historical inaccuracy
     const absError = Math.abs(args.historicalError);
-    if (absError > 4) confidence -= 0.2;
-    else if (absError > 2) confidence -= 0.1;
+    if (absError > 0.4) confidence -= 0.2;
+    else if (absError > 0.2) confidence -= 0.1;
 
     // 3. Adjust based on description quality
     const descLen = args.description.length;
@@ -275,61 +269,72 @@ export class AiEstimatorService {
     return Math.max(0.1, Math.min(0.99, confidence)); // Clamp between 10% and 99%
   }
 
-  private buildPrompt(taskDto: CreateTaskDto, project: Project): string {
+  private buildClarificationRequestPrompt(taskDto: CreateTaskDto): string {
     return `
-  You are a senior software engineer estimating development tasks.
-  Your goal is to give a realistic time estimate in hours for completing the described task.
-
-  Project complexity: ${project.complexity}
-  Task title: ${taskDto.title}
-  Task description: ${taskDto.description}
-  Required technology: ${taskDto.technology}
-  Developer experience level: ${taskDto.experienceLevel}
-
-  Estimate the time required to complete this task, considering best practices and potential blockers.
-  Respond with a single number representing the estimated hours (e.g. 7.5). Do not include any explanation.
-`;
+      The user has provided a very brief task description: "${taskDto.title} - ${taskDto.description}".
+      This is not enough information to create an estimate.
+      Your task is to generate 3-5 critical questions to ask the user to clarify the requirements.
+      Return these questions in a JSON object with a single key "questions", which is an array of strings.
+      Example: { "questions": ["What color should the button be?", "Where should it be placed?"] }
+    `;
   }
 
-  private buildBreakdownPrompt(
+  private buildEstimationPrompt(
     taskDto: CreateTaskDto,
-    project: Project
+    project: Project,
+    history: { question: string; answer: string }[] = []
   ): string {
+    const historyStr = history
+      .map((h) => `Q: ${h.question}\n\nA: ${h.answer}`)
+      .join('\n\n');
+
+    const instructions = [
+      `1. Break down the task into a list of 2-5 technical subtasks. For each subtask, provide a title, a brief technical description, an estimated time in hours, and a short explanation for the estimate.`,
+      `2. Provide the output in a JSON object with the following structure: { "subtasks": [{ "title": string, "description": string, "estimateHours": number, "explanation": string }], "risks": [{ "risk": string, "mitigation": string }] | null, "managerNote": string | null, "questions": null }`,
+    ];
+
+    let instructionNumber = 3;
+
+    if (taskDto.generateRiskAnalysis) {
+      instructions.push(
+        `${instructionNumber++}. Identify 2-3 potential risks for this task and suggest a mitigation strategy for each. The risks should be in the 'risks' array.`
+      );
+    } else {
+      instructions.push(
+        `${instructionNumber++}. The 'risks' field should be null.`
+      );
+    }
+
+    if (taskDto.generateManagerNote) {
+      instructions.push(
+        `${instructionNumber++}. Add a 'managerNote' field with a brief, high-level summary (2-3 sentences) for a non-technical manager, explaining the core work and potential challenges.`
+      );
+    } else {
+      instructions.push(
+        `${instructionNumber++}. The 'managerNote' field should be null.`
+      );
+    }
+
     return `
-You are a senior software engineer assisting in granular task planning.
+      You are an expert software engineering estimator.
+      Your task is to analyze the following task and provide a detailed estimate.
 
-Context:
-- Project Complexity: ${project.complexity}
-- Technology: ${taskDto.technology}
-- Experience Level: ${taskDto.experienceLevel}
+      **Project Context:**
+      - Project Name: ${project.name}
+      - Project Description: ${project.description}
+      - Project Complexity: ${project.complexity}
 
-Main Task:
-- Title: ${taskDto.title}
-- Description: ${taskDto.description}
+      **Task Details:**
+      - Title: ${taskDto.title}
+      - Description: ${taskDto.description}
+      - Technology: ${taskDto.technology}
+      - Experience Level Required: ${taskDto.experienceLevel}
 
-Instructions:
-1. Break the task into 3–6 independent **developer-level subtasks** (not epics, not vague goals).
-2. Each subtask must be:
-   - small enough to complete in under 1 day
-   - clearly scoped and testable
-   - in the same technical stack (unless integration is needed)
-3. Prefer action-oriented verbs: "Implement", "Setup", "Refactor", "Write tests", "Integrate", etc.
-4. Each subtask must include:
-   - "title": concise string
-   - "description": 1–2 sentence goal and what’s expected
-   - "estimateHours": realistic hours for a developer of specified experience
+      **Clarification History:**
+      ${history.length > 0 ? historyStr : 'No clarification was needed.'}
 
-Return a **valid JSON** in this shape:
-{
-  "subtasks": [
-    {
-      "title": "Setup GraphQL schema",
-      "description": "Define types and queries for user registration.",
-      "estimateHours": 2.5
-    },
-    ...
-  ]
-}
-  `.trim();
+      **Your Instructions:**
+      ${instructions.join('\n')}
+    `;
   }
 }

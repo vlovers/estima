@@ -1,3 +1,4 @@
+import { AddManagerExplanationDto } from './dto/add-manager-explanation.dto';
 import { UpdateEstimateDto } from './dto/update-estimate.dto';
 import { CreateEstimateDto } from './dto/create-estimate.dto';
 import { EstimatesService } from './estimates.service';
@@ -71,6 +72,20 @@ export class EstimatesController {
     @Body() updateEstimateDto: UpdateEstimateDto
   ) {
     return this.estimatesService.update(id, updateEstimateDto);
+  }
+
+  @Patch(':id/manager-explanation')
+  @ApiOperation({ summary: "Add a manager's explanation to an estimate" })
+  @ApiResponse({ status: 200, description: 'Explanation added successfully' })
+  @ApiResponse({ status: 404, description: 'Estimate not found' })
+  addManagerExplanation(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() addManagerExplanationDto: AddManagerExplanationDto
+  ) {
+    return this.estimatesService.addManagerExplanation(
+      id,
+      addManagerExplanationDto.explanation
+    );
   }
 
   @Delete(':id')

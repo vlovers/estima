@@ -1,5 +1,6 @@
 import { UpdateTaskDto } from './dto/update-task.dto';
 import { CreateTaskDto } from './dto/create-task.dto';
+import { ClarifyTaskDto } from './dto/clarify-task.dto';
 import { TasksService } from './tasks.service';
 import { Task } from './entities/task.entity';
 
@@ -44,7 +45,7 @@ export class TasksController {
       createTaskDto,
       req.user.userId
     );
-    return Array.isArray(result) ? result : [result];
+    return result;
   }
 
   @Get(':id')
@@ -69,6 +70,22 @@ export class TasksController {
     @Request() req
   ) {
     return this.tasksService.update(id, updateTaskDto, req.user.userId);
+  }
+
+  @Patch(':id/clarify')
+  @ApiOperation({ summary: 'Provide clarifications for a task' })
+  @ApiResponse({
+    status: 200,
+    description: 'Task updated with estimate',
+    type: Task,
+  })
+  @ApiResponse({ status: 404, description: 'Task not found' })
+  clarify(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() clarifyTaskDto: ClarifyTaskDto,
+    @Request() req
+  ) {
+    return this.tasksService.clarify(id, clarifyTaskDto, req.user.userId);
   }
 
   @Delete(':id')

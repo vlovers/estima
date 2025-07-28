@@ -16,11 +16,12 @@ export class EstimatesService {
   async create(createEstimateDto: CreateEstimateDto): Promise<Estimate> {
     const {
       taskId,
-      userId,
       manualEstimate,
       finalEstimate,
       source,
       confidence,
+      explanation,
+      managerExplanation,
     } = createEstimateDto;
 
     const estimateData: Partial<Estimate> = {
@@ -28,15 +29,19 @@ export class EstimatesService {
       manualEstimate,
       source,
       confidence,
+      explanation,
+      managerExplanation,
       task: { id: taskId } as any,
     };
 
-    if (userId) {
-      estimateData.user = { id: userId } as any;
-    }
-
     const estimate = this.estimateRepository.create(estimateData);
     return this.estimateRepository.save(estimate);
+  }
+
+  async addManagerExplanation(estimateId: string, explanation: string) {
+    return this.estimateRepository.update(estimateId, {
+      managerExplanation: explanation,
+    });
   }
 
   findAll() {

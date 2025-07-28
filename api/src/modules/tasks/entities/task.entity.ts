@@ -13,6 +13,11 @@ import {
   Entity,
 } from 'typeorm';
 
+export enum TaskStatus {
+  PENDING_CLARIFICATION = 'pending_clarification',
+  ESTIMATED = 'estimated',
+}
+
 @Entity({ name: 'tasks' })
 export class Task {
   @PrimaryGeneratedColumn('uuid')
@@ -37,16 +42,35 @@ export class Task {
   @Column({ type: 'simple-array', nullable: true })
   tags: string[];
 
+  @Column({ type: 'jsonb', nullable: true, default: [] })
+  riskAnalysis: { risk: string; mitigation: string }[];
+
+  @Column({ type: 'boolean', default: true })
+  breakdown: boolean;
+
+  @Column({
+    type: 'enum',
+    enum: TaskStatus,
+    default: TaskStatus.ESTIMATED,
+  })
+  status: TaskStatus;
+
+  @Column({ type: 'jsonb', nullable: true })
+  clarificationHistory: { question: string; answer: string }[] | null;
+
   @CreateDateColumn()
   createdAt: Date;
 
   @UpdateDateColumn()
   updatedAt: Date;
 
-  @ManyToOne(() => Project, (project) => project.tasks)
+  @ManyToOne(() => Project, (project) => project.tasks, { onDelete: 'CASCADE' })
   project: Project;
 
-  @OneToMany(() => Estimate, (estimate) => estimate.task)
+  @OneToMany(() => Estimate, (estimate) => estimate.task, {
+    cascade: true,
+    eager: true,
+  })
   estimates: Estimate[];
 
   @ManyToOne(() => Task, (task) => task.subtasks, {

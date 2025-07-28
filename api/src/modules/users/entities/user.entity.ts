@@ -7,7 +7,6 @@ import {
 } from 'typeorm';
 import * as bcrypt from 'bcrypt';
 import { Project } from '../../projects/entities/project.entity';
-import { Estimate } from '../../estimates/entities/estimate.entity';
 
 @Entity('users')
 export class User {
@@ -25,9 +24,6 @@ export class User {
 
   @OneToMany(() => Project, (project) => project.user)
   projects: Project[];
-
-  @OneToMany(() => Estimate, (estimate) => estimate.user)
-  estimates: Estimate[];
 
   @BeforeInsert()
   async hashPassword() {

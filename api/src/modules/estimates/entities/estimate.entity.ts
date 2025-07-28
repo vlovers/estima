@@ -1,5 +1,4 @@
 import { Column, Entity, ManyToOne, PrimaryGeneratedColumn } from 'typeorm';
-import { User } from '../../users/entities/user.entity';
 import { Task } from '../../tasks/entities/task.entity';
 
 export enum EstimateSource {
@@ -23,8 +22,11 @@ export class Estimate {
   @Column({ type: 'float', nullable: true })
   confidence: number;
 
-  @Column({ nullable: true })
+  @Column({ type: 'text', nullable: true })
   explanation: string;
+
+  @Column({ type: 'text', nullable: true })
+  managerExplanation: string;
 
   @Column({
     type: 'enum',
@@ -36,10 +38,4 @@ export class Estimate {
     onDelete: 'CASCADE',
   })
   task: Task;
-
-  @ManyToOne(() => User, (user) => user.estimates, {
-    nullable: true,
-    eager: true,
-  })
-  user: User;
 }

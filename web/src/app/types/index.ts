@@ -11,6 +11,7 @@ export interface User {
 }
 
 export interface Estimate {
+  managerExplanation?: string;
   confidence: number | null;
   explanation: string | null;
   finalEstimate: number;
@@ -23,6 +24,11 @@ export interface EstimateFeedback {
   id: string;
 }
 
+export interface Clarification {
+  question: string;
+  answer: string;
+}
+
 export interface Task {
   feedbacks: EstimateFeedback[];
   experienceLevel: string;
@@ -33,6 +39,9 @@ export interface Task {
   tags: string[];
   title: string;
   id: string;
+  riskAnalysis?: { risk: string; mitigation: string }[];
+  status: 'ESTIMATED' | 'PENDING_CLARIFICATION';
+  clarificationHistory?: Clarification[];
 }
 
 export interface Project {

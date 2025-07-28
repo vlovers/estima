@@ -1,4 +1,5 @@
 import { ManualEstimateForm } from '../features/tasks/components/ManualEstimateForm';
+import { ClarificationModal } from '../features/tasks/components/ClarificationModal';
 import { CreateTaskForm } from '../features/tasks/components/CreateTaskForm';
 import { IconSearch, IconArrowDown, IconArrowUp } from '@tabler/icons-react';
 import { ProjectHeader } from '../features/projects/components/ProjectHeader';
@@ -10,12 +11,13 @@ import { TaskList } from '../features/tasks/components/TaskList';
 import { useState, useMemo, useEffect } from 'react';
 import { useDisclosure } from '@mantine/hooks';
 import { useParams } from 'react-router-dom';
-import { Task } from '../types';
+import { Task, Clarification } from '../types';
 
 import {
   useCreateManualEstimateMutation,
   useCreateFeedbackMutation,
   useDeleteTaskMutation,
+  useClarifyTaskMutation,
 } from '../features/tasks/hooks/tasks.hooks';
 
 import {
@@ -95,6 +97,10 @@ export function ProjectDetails() {
     manualEstimateModalOpened,
     { open: openManualEstimateModal, close: closeManualEstimateModal },
   ] = useDisclosure(false);
+  const [
+    clarifyModalOpened,
+    { open: openClarifyModal, close: closeClarifyModal },
+  ] = useDisclosure(false);
 
   // Data Fetching
   const {
@@ -116,16 +122,17 @@ export function ProjectDetails() {
   const manualEstimateMutation = useCreateManualEstimateMutation(
     project?.id || ''
   );
+  const clarifyMutation = useClarifyTaskMutation(closeClarifyModal);
 
   // Derived State
   const allTags = useMemo(() => {
     if (!project) return [];
 
-    return [...new Set(project.tasks.flatMap((task) => task.tags || []))];
+    return [...new Set(project?.tasks?.flatMap((task) => task.tags || []))];
   }, [project]);
 
   const filteredTasks = useMemo(() => {
-    return filterTasks(project.tasks || [], searchQuery, tagsFilter);
+    return filterTasks(project?.tasks || [], searchQuery, tagsFilter);
   }, [project, searchQuery, tagsFilter]);
 
   // Handlers
@@ -149,6 +156,11 @@ export function ProjectDetails() {
     openManualEstimateModal();
   };
 
+  const handleClarifyClick = (task: Task) => {
+    setSelectedTask(task);
+    openClarifyModal();
+  };
+
   const handleToggleTask = (taskId: string) => {
     setExpandedTasks((prev) => {
       const newSet = new Set(prev);
@@ -166,6 +178,12 @@ export function ProjectDetails() {
       deleteMutation.mutate(selectedTask.id, {
         onSuccess: closeDeleteModal,
       });
+    }
+  };
+
+  const handleClarifySubmit = (clarifications: Clarification[]) => {
+    if (selectedTask) {
+      clarifyMutation.mutate({ id: selectedTask.id, clarifications });
     }
   };
 
@@ -237,6 +255,7 @@ export function ProjectDetails() {
               onDelete={handleDeleteClick}
               onFeedback={handleFeedbackClick}
               onManualEstimate={handleManualEstimateClick}
+              onClarify={handleClarifyClick}
               expandedTasks={expandedTasks}
               onToggleTask={handleToggleTask}
             />
@@ -279,6 +298,13 @@ export function ProjectDetails() {
           <EditTaskForm task={selectedTask} onSuccess={closeEditModal} />
         )}
       </Modal>
+
+      <ClarificationModal
+        opened={clarifyModalOpened}
+        onClose={closeClarifyModal}
+        task={selectedTask}
+        onSubmit={handleClarifySubmit}
+      />
 
       <Modal
         opened={feedbackModalOpened}
