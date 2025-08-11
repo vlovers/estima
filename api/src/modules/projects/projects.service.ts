@@ -4,6 +4,7 @@ import { CreateProjectDto } from './dto/create-project.dto';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Task } from '../tasks/entities/task.entity';
 import { Project } from './entities/project.entity';
+import { ProjectComplexity } from './entities/project-complexity.enum';
 import { Repository } from 'typeorm';
 
 import {
@@ -22,6 +23,10 @@ export class ProjectsService {
   create(createProjectDto: CreateProjectDto, userId: string) {
     const project = this.projectRepository.create({
       ...createProjectDto,
+      // Ensure we never insert nulls for NOT NULL columns; honor defaults
+      complexity:
+        (createProjectDto as any).complexity ?? ProjectComplexity.MEDIUM,
+      overhead: (createProjectDto as any).overhead ?? 0,
       userId,
     });
     return this.projectRepository.save(project);

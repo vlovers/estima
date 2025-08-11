@@ -15,8 +15,16 @@ export interface Estimate {
   confidence: number | null;
   explanation: string | null;
   finalEstimate: number;
-  source: 'ai' | 'manual';
+  source: 'ai' | 'manual' | 'ai_subtask_sum' | 'final';
   id: string;
+  // Structured fields from backend (optional)
+  p10?: number | null;
+  p50?: number | null;
+  p90?: number | null;
+  topDown?: number | null;
+  bottomUp?: number | null;
+  divergencePct?: number | null; // 0..200
+  logs?: string | null; // plain text lines separated by \n
 }
 
 export interface EstimateFeedback {
@@ -40,7 +48,8 @@ export interface Task {
   title: string;
   id: string;
   riskAnalysis?: { risk: string; mitigation: string }[];
-  status: 'ESTIMATED' | 'PENDING_CLARIFICATION';
+  // Align with backend enum values (lowercase strings)
+  status: 'estimated' | 'pending_clarification';
   clarificationHistory?: Clarification[];
 }
 
@@ -63,6 +72,9 @@ export interface CreateTaskDto {
   projectId: string;
   tags: string[];
   title: string;
+  // Optional generation flags supported by backend
+  generateManagerNote?: boolean;
+  generateRiskAnalysis?: boolean;
 }
 
 export interface UpdateTaskDto {

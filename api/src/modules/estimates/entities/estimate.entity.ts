@@ -28,6 +28,27 @@ export class Estimate {
   @Column({ type: 'text', nullable: true })
   managerExplanation: string;
 
+  @Column({ type: 'float', nullable: true })
+  p10?: number;
+
+  @Column({ type: 'float', nullable: true })
+  p50?: number;
+
+  @Column({ type: 'float', nullable: true })
+  p90?: number;
+
+  @Column({ type: 'float', nullable: true })
+  topDown?: number;
+
+  @Column({ type: 'float', nullable: true })
+  bottomUp?: number;
+
+  @Column({ type: 'float', nullable: true })
+  divergencePct?: number;
+
+  @Column({ type: 'text', nullable: true })
+  logs?: string;
+
   @Column({
     type: 'enum',
     enum: EstimateSource,

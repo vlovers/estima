@@ -71,4 +71,45 @@ export class CreateEstimateDto {
   @IsUUID()
   @IsOptional()
   userId?: string;
+
+  @ApiProperty({ required: false, description: 'p10 percentile (hours)' })
+  @IsNumber()
+  @IsOptional()
+  p10?: number;
+
+  @ApiProperty({ required: false, description: 'p50 percentile (hours)' })
+  @IsNumber()
+  @IsOptional()
+  p50?: number;
+
+  @ApiProperty({ required: false, description: 'p90 percentile (hours)' })
+  @IsNumber()
+  @IsOptional()
+  p90?: number;
+
+  @ApiProperty({ required: false, description: 'Top-down estimate (hours)' })
+  @IsNumber()
+  @IsOptional()
+  topDown?: number;
+
+  @ApiProperty({ required: false, description: 'Bottom-up estimate (hours)' })
+  @IsNumber()
+  @IsOptional()
+  bottomUp?: number;
+
+  @ApiProperty({
+    required: false,
+    description: 'Symmetric divergence in percent (0..200)',
+  })
+  @IsNumber()
+  @IsOptional()
+  divergencePct?: number;
+
+  @ApiProperty({
+    required: false,
+    description: 'Computation logs (plain text)',
+  })
+  @IsString()
+  @IsOptional()
+  logs?: string;
 }

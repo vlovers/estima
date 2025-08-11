@@ -15,7 +15,8 @@ export const useCreateTaskMutation = (onSuccessCallback: () => void) => {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: createTask,
-    onSuccess: (data: Task | Task[]) => {
+    onSuccess: (_data: Task | Task[]) => {
+      void _data;
       queryClient.invalidateQueries({ queryKey: ['project'] });
 
       notifications.show({
@@ -40,14 +41,14 @@ export const useCreateTaskMutation = (onSuccessCallback: () => void) => {
 };
 
 export const useDeleteTaskMutation = (
-  projectId: string | undefined,
+  _projectId: string | undefined,
   onSuccessCallback?: () => void
 ) => {
   const queryClient = useQueryClient();
   return useMutation<void, Error, string>({
     mutationFn: deleteTask,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['project'] });
+      queryClient.invalidateQueries({ queryKey: ['project', _projectId] });
       notifications.show({
         title: 'Task Deleted',
         message: 'The task has been successfully deleted.',
@@ -66,14 +67,14 @@ export const useDeleteTaskMutation = (
 };
 
 export const useUpdateTaskMutation = (
-  projectId: string,
+  _projectId: string,
   onSuccessCallback?: () => void
 ) => {
   const queryClient = useQueryClient();
   return useMutation<Task, Error, UpdateTaskDto>({
     mutationFn: updateTask,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['project'] });
+      queryClient.invalidateQueries({ queryKey: ['project', _projectId] });
       notifications.show({
         title: 'Task Updated',
         message: 'The task has been successfully updated.',
@@ -95,12 +96,12 @@ export const useUpdateTaskMutation = (
   });
 };
 
-export const useCreateFeedbackMutation = (projectId: string | undefined) => {
+export const useCreateFeedbackMutation = (_projectId: string | undefined) => {
   const queryClient = useQueryClient();
   return useMutation<void, Error, { taskId: string; actualHours: number }>({
     mutationFn: createEstimateFeedback,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['project'] });
+      queryClient.invalidateQueries({ queryKey: ['project', _projectId] });
       notifications.show({
         title: 'Feedback Submitted',
         message: 'Thank you! Your feedback will improve future estimates.',
@@ -118,14 +119,14 @@ export const useCreateFeedbackMutation = (projectId: string | undefined) => {
 };
 
 export const useCreateManualEstimateMutation = (
-  projectId: string | undefined
+  _projectId: string | undefined
 ) => {
   const queryClient = useQueryClient();
   return useMutation<Task, Error, { taskId: string; hours: number }>({
     mutationFn: (data) =>
       updateTask({ id: data.taskId, manualEstimate: data.hours }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['project'] });
+      queryClient.invalidateQueries({ queryKey: ['project', _projectId] });
       notifications.show({
         title: 'Success',
         message: 'Manual estimate saved successfully.',
@@ -157,7 +158,7 @@ export const useClarifyTaskMutation = (onSuccessCallback?: () => void) => {
     onSuccess: (updatedTask) => {
       queryClient.invalidateQueries({ queryKey: ['project'] });
 
-      if (updatedTask.status === 'ESTIMATED') {
+      if (updatedTask.status === 'estimated') {
         notifications.show({
           title: 'Task Clarified',
           message: 'The task has been updated with a new AI estimate.',

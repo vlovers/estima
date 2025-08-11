@@ -77,7 +77,7 @@ export function ProjectDetails() {
   const [formOpened, { toggle: toggleForm }] = useDisclosure(false);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
-  const [tagsFilter, setTagsFilter] = useState<string[]>([]);
+  const [tagsFilter] = useState<string[]>([]);
   const [sortField, setSortField] = useState('createdAt');
   const [sortOrder, setSortOrder] = useState('DESC');
   const [expandedTasks, setExpandedTasks] = useState<Set<string>>(new Set());
@@ -125,11 +125,6 @@ export function ProjectDetails() {
   const clarifyMutation = useClarifyTaskMutation(closeClarifyModal);
 
   // Derived State
-  const allTags = useMemo(() => {
-    if (!project) return [];
-
-    return [...new Set(project?.tasks?.flatMap((task) => task.tags || []))];
-  }, [project]);
 
   const filteredTasks = useMemo(() => {
     return filterTasks(project?.tasks || [], searchQuery, tagsFilter);

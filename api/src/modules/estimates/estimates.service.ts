@@ -22,6 +22,13 @@ export class EstimatesService {
       confidence,
       explanation,
       managerExplanation,
+      p10,
+      p50,
+      p90,
+      topDown,
+      bottomUp,
+      divergencePct,
+      logs,
     } = createEstimateDto;
 
     const estimateData: Partial<Estimate> = {
@@ -31,6 +38,13 @@ export class EstimatesService {
       confidence,
       explanation,
       managerExplanation,
+      p10,
+      p50,
+      p90,
+      topDown,
+      bottomUp,
+      divergencePct,
+      logs,
       task: { id: taskId } as any,
     };
 
