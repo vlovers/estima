@@ -3,7 +3,16 @@ import { EstimateSource } from '../estimates/entities/estimate.entity';
 import { EstimatesService } from '../estimates/estimates.service';
 import { ProjectsService } from '../projects/projects.service';
 import { UpdateTaskDto } from './dto/update-task.dto';
-import { CreateTaskDto } from './dto/create-task.dto';
+import {
+  CreateTaskDto,
+  NfrCategory,
+  IntegrationType,
+  IntegrationInteraction,
+  IntegrationAuth,
+  UiDesignComplexity,
+  MigrationComplexity,
+  ComplexityTag,
+} from './dto/create-task.dto';
 import { ClarifyTaskDto } from './dto/clarify-task.dto';
 import { InjectRepository } from '@nestjs/typeorm';
 import { TaskStatus } from './entities/task.entity';
@@ -42,7 +51,24 @@ export class TasksService {
     if (analysis.type === 'questions') {
       // AI returned questions, so create a task pending clarification
       const task = this.taskRepository.create({
-        ...createTaskDto,
+        title: createTaskDto.title,
+        description: createTaskDto.description,
+        technology: createTaskDto.technology,
+        experienceLevel: createTaskDto.experienceLevel,
+        tags: createTaskDto.tags,
+        breakdown: createTaskDto.breakdown ?? true,
+        // Persist structured fields
+        acceptanceCriteria: createTaskDto.acceptanceCriteria ?? [],
+        assumptions: createTaskDto.assumptions ?? [],
+        constraints: createTaskDto.constraints ?? [],
+        nfrs: createTaskDto.nfrs ?? [],
+        integrations: createTaskDto.integrations ?? [],
+        testing: createTaskDto.testing ?? null,
+        documentation: createTaskDto.documentation ?? null,
+        complexityTags: createTaskDto.complexityTags ?? [],
+        uiDesignComplexity: createTaskDto.uiDesignComplexity ?? null,
+        needsDataMigration: createTaskDto.needsDataMigration ?? false,
+        migrationComplexity: createTaskDto.migrationComplexity ?? null,
         project: { id: project.id },
         status: TaskStatus.PENDING_CLARIFICATION,
         clarificationHistory: analysis.data.questions.map((q) => ({
@@ -61,8 +87,24 @@ export class TasksService {
 
     // 1. Create the parent task
     const parentTask = this.taskRepository.create({
-      ...createTaskDto,
+      title: createTaskDto.title,
+      description: createTaskDto.description,
+      technology: createTaskDto.technology,
+      experienceLevel: createTaskDto.experienceLevel,
+      tags: createTaskDto.tags,
       breakdown, // Save the breakdown preference
+      // Persist structured fields on parent task
+      acceptanceCriteria: createTaskDto.acceptanceCriteria ?? [],
+      assumptions: createTaskDto.assumptions ?? [],
+      constraints: createTaskDto.constraints ?? [],
+      nfrs: createTaskDto.nfrs ?? [],
+      integrations: createTaskDto.integrations ?? [],
+      testing: createTaskDto.testing ?? null,
+      documentation: createTaskDto.documentation ?? null,
+      complexityTags: createTaskDto.complexityTags ?? [],
+      uiDesignComplexity: createTaskDto.uiDesignComplexity ?? null,
+      needsDataMigration: createTaskDto.needsDataMigration ?? false,
+      migrationComplexity: createTaskDto.migrationComplexity ?? null,
       project: { id: project.id },
       riskAnalysis: risks,
       status: TaskStatus.ESTIMATED,
@@ -283,8 +325,39 @@ export class TasksService {
     const project = await this.projectsService.findOne(task.project.id, userId);
 
     // Re-run AI analysis with the new context
+    const reconstructedDto: CreateTaskDto = {
+      projectId: project.id,
+      title: task.title,
+      description: task.description ?? '',
+      technology: task.technology ?? '',
+      experienceLevel: task.experienceLevel,
+      tags: task.tags ?? [],
+      acceptanceCriteria: task.acceptanceCriteria ?? [],
+      assumptions: task.assumptions ?? [],
+      constraints: task.constraints ?? [],
+      nfrs: (task.nfrs ?? []).map((n) => ({
+        category: (n.category as unknown) as NfrCategory,
+        requirement: n.requirement,
+        target: n.target,
+      })),
+      integrations: (task.integrations ?? []).map((i) => ({
+        name: i.name,
+        type: (i.type as unknown) as IntegrationType,
+        interaction: (i.interaction as unknown) as IntegrationInteraction,
+        auth: (i.auth as unknown) as IntegrationAuth,
+        sandbox: i.sandbox,
+      })),
+      testing: task.testing ?? undefined,
+      documentation: task.documentation ?? undefined,
+      complexityTags: ((task.complexityTags ?? []) as unknown) as ComplexityTag[],
+      uiDesignComplexity: (task.uiDesignComplexity as unknown) as UiDesignComplexity,
+      needsDataMigration: task.needsDataMigration ?? false,
+      migrationComplexity: (task.migrationComplexity as unknown) as MigrationComplexity,
+      breakdown: task.breakdown,
+    };
+
     const analysis = await this.aiEstimatorService.getAiAnalysis(
-      { ...task, projectId: project.id }, // Re-construct DTO
+      reconstructedDto,
       project,
       task.clarificationHistory // Pass the history explicitly
     );

@@ -6,6 +6,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Task } from '../tasks/entities/task.entity';
 import { ConfigService } from '@nestjs/config';
 import { Repository } from 'typeorm';
+import { createHash } from 'crypto';
 import OpenAI from 'openai';
 
 export interface Subtask {
@@ -42,6 +43,19 @@ export type AiAnalysisResult =
 export class AiEstimatorService {
   private readonly openai: OpenAI;
   private readonly logger = new Logger(AiEstimatorService.name);
+  // PR-6: pipeline versioning and read-through cache (in-memory with TTL)
+  private readonly pipelineVersion = '1.7.0';
+  private readonly cacheTtlMs = 24 * 60 * 60 * 1000; // 24 hours
+  private readonly analysisCache = new Map<
+    string,
+    { createdAt: number; version: string; result: AiAnalysisResult }
+  >();
+  // PR-7: semantic similarity (embeddings) — in-memory cache
+  private readonly embeddingModel = this.configService.get<string>(
+    'OPENAI_EMBEDDING_MODEL',
+    'text-embedding-3-small'
+  );
+  private readonly embedCache = new Map<string, number[]>(); // key: sha256(text)
 
   constructor(
     private readonly configService: ConfigService,
@@ -51,6 +65,143 @@ export class AiEstimatorService {
     this.openai = new OpenAI({
       apiKey: this.configService.get<string>('OPENAI_API_KEY'),
     });
+  }
+
+  private hashText(text: string): string {
+    return createHash('sha256').update(text || '').digest('hex');
+  }
+
+  private cosine(a: number[], b: number[]): number {
+    if (!a || !b || a.length !== b.length) return 0;
+    let dot = 0,
+      na = 0,
+      nb = 0;
+    for (let i = 0; i < a.length; i++) {
+      const x = a[i];
+      const y = b[i];
+      dot += x * y;
+      na += x * x;
+      nb += y * y;
+    }
+    if (na === 0 || nb === 0) return 0;
+    return dot / (Math.sqrt(na) * Math.sqrt(nb));
+  }
+
+  private async getEmbeddings(texts: string[]): Promise<number[][]> {
+    const vectors: number[][] = [];
+    const toQuery: { idx: number; text: string; key: string }[] = [];
+    // Check cache first
+    texts.forEach((t, idx) => {
+      const key = this.hashText(t);
+      const cached = this.embedCache.get(key);
+      if (cached) {
+        vectors[idx] = cached;
+      } else {
+        toQuery.push({ idx, text: t, key });
+      }
+    });
+    if (toQuery.length > 0) {
+      const res = await this.openai.embeddings.create({
+        model: this.embeddingModel,
+        input: toQuery.map((x) => x.text),
+      } as any);
+      res.data.forEach((d: any, i: number) => {
+        const vec = d.embedding as number[];
+        const meta = toQuery[i];
+        this.embedCache.set(meta.key, vec);
+        vectors[meta.idx] = vec;
+      });
+    }
+    return vectors;
+  }
+
+  // Build a deterministic input hash for caching
+  private buildInputHash(
+    taskDto: CreateTaskDto,
+    project: Project,
+    history: { question: string; answer: string }[]
+  ): string {
+    // Canonicalize data shape; include pipelineVersion so cache invalidates on logic changes
+    const payload = {
+      pipelineVersion: this.pipelineVersion,
+      task: {
+        title: taskDto.title,
+        description: taskDto.description,
+        technology: taskDto.technology,
+        experienceLevel: taskDto.experienceLevel,
+        tags: (taskDto.tags || []).slice().sort(),
+        breakdown: (taskDto as any).breakdown ?? true,
+        generateRiskAnalysis: (taskDto as any).generateRiskAnalysis ?? false,
+        generateManagerNote: (taskDto as any).generateManagerNote ?? false,
+        manualEstimate: (taskDto as any).manualEstimate ?? null,
+        acceptanceCriteria: (taskDto as any).acceptanceCriteria
+          ? [...(taskDto as any).acceptanceCriteria]
+          : [],
+        assumptions: (taskDto as any).assumptions
+          ? [...(taskDto as any).assumptions]
+          : [],
+        constraints: (taskDto as any).constraints
+          ? [...(taskDto as any).constraints]
+          : [],
+        nfrs: (taskDto as any).nfrs
+          ? (taskDto as any).nfrs.map((n: any) => ({
+              category: String(n.category),
+              requirement: String(n.requirement),
+              target: n.target != null ? String(n.target) : undefined,
+            }))
+          : [],
+        integrations: (taskDto as any).integrations
+          ? (taskDto as any).integrations
+              .map((i: any) => ({
+                name: String(i.name),
+                type: i.type != null ? String(i.type) : undefined,
+                interaction: String(i.interaction),
+                auth: i.auth != null ? String(i.auth) : undefined,
+                sandbox: Boolean(i.sandbox ?? false),
+              }))
+              .sort((a: any, b: any) => (a.name + a.interaction).localeCompare(b.name + b.interaction))
+          : [],
+        testing: (taskDto as any).testing
+          ? {
+              unit: Boolean((taskDto as any).testing.unit ?? true),
+              integration: Boolean((taskDto as any).testing.integration ?? false),
+              e2e: Boolean((taskDto as any).testing.e2e ?? false),
+              unitCoverageTarget:
+                typeof (taskDto as any).testing.unitCoverageTarget === 'number'
+                  ? (taskDto as any).testing.unitCoverageTarget
+                  : undefined,
+              performance: Boolean((taskDto as any).testing.performance ?? false),
+              security: Boolean((taskDto as any).testing.security ?? false),
+            }
+          : null,
+        documentation: (taskDto as any).documentation
+          ? {
+              userDocs: Boolean((taskDto as any).documentation.userDocs ?? false),
+              apiDocs: Boolean((taskDto as any).documentation.apiDocs ?? false),
+              readme: Boolean((taskDto as any).documentation.readme ?? false),
+              changelog: Boolean((taskDto as any).documentation.changelog ?? false),
+            }
+          : null,
+        complexityTags: ((taskDto as any).complexityTags || [])
+          .slice()
+          .map((x: any) => String(x))
+          .sort(),
+        uiDesignComplexity: (taskDto as any).uiDesignComplexity ?? null,
+        needsDataMigration: Boolean((taskDto as any).needsDataMigration ?? false),
+        migrationComplexity: (taskDto as any).migrationComplexity ?? null,
+      },
+      project: {
+        id: project.id,
+        complexity: project.complexity,
+        overhead: project.overhead,
+      },
+      history: (history || []).map((h) => ({
+        q: h.question,
+        a: h.answer,
+      })),
+    };
+    const json = JSON.stringify(payload);
+    return createHash('sha256').update(json).digest('hex');
   }
 
   private getSpecQualitySchema() {
@@ -189,22 +340,56 @@ History: ${historyStr}`;
     project: Project,
     history: { question: string; answer: string }[] = []
   ): Promise<AiAnalysisResult> {
+    // PR-6: cache lookup
+    const inputHash = this.buildInputHash(taskDto, project, history);
+    const cached = this.analysisCache.get(inputHash);
+    if (cached) {
+      const fresh = Date.now() - cached.createdAt < this.cacheTtlMs;
+      const sameVersion = cached.version === this.pipelineVersion;
+      if (fresh && sameVersion) {
+        this.logger.log(`Cache hit for analysis ${inputHash.slice(0, 8)} (v${cached.version})`);
+        return cached.result;
+      }
+      this.logger.log(
+        `Cache stale/mismatch for ${inputHash.slice(0, 8)} (fresh=${fresh}, versionOk=${sameVersion}); recomputing.`
+      );
+    } else {
+      this.logger.log(`Cache miss for analysis ${inputHash.slice(0, 8)}; computing.`);
+    }
+
     // 0) Run spec quality assessment to decide whether to ask questions first
     const isFirstCycle = history.length === 0;
     const descLen = taskDto.description?.length ?? 0;
     let specQuality: SpecQualityResponse | null = null;
     try {
       specQuality = await this.assessSpecQuality(taskDto, project, history);
+      // Structured log for spec quality
+      this.logger.log(
+        `SpecQuality: score=${specQuality.score?.toFixed?.(2) ?? 'n/a'}; missing=${(specQuality.missing || []).join(', ')}; reasons=${(specQuality.reasons || []).join(' | ')}`
+      );
     } catch (e) {
       this.logger.warn(`Spec quality assessment failed, falling back. ${e}`);
     }
 
     const needsQuestions = (() => {
       if (!specQuality) return isFirstCycle && descLen < 50; // fallback heuristic
-      if (isFirstCycle && specQuality.score < 0.6) return true;
-      if (specQuality.score < 0.4) return true; // even in later cycles, still too vague
+      const missingCount = (specQuality.missing || []).length;
+      // Gate thresholds (PR-5):
+      // - Always gate if first cycle and score < 0.55
+      // - Gate if score < 0.7 and we see 3+ missing aspects
+      // - Across cycles, if score is extremely low (<0.4), still gate
+      if (isFirstCycle && specQuality.score < 0.55) return true;
+      if (specQuality.score < 0.7 && missingCount >= 3) return true;
+      if (specQuality.score < 0.4) return true;
       return false;
     })();
+
+    if (needsQuestions) {
+      const reason = specQuality
+        ? `Clarification gate triggered (score=${specQuality.score.toFixed(2)}, missing=${(specQuality.missing || []).length})`
+        : `Clarification gate triggered via fallback heuristic (descLen=${descLen})`;
+      this.logger.log(reason);
+    }
 
     const prompt = needsQuestions
       ? this.buildClarificationRequestPrompt(taskDto, specQuality?.missing)
@@ -237,7 +422,7 @@ History: ${historyStr}`;
       const response = await this.chatWithOptionalSchema(
         model,
         messages,
-        0.2,
+        0,
         schema
       );
 
@@ -254,7 +439,13 @@ History: ${historyStr}`;
         Array.isArray(parsed.questions) &&
         parsed.questions.length > 0
       ) {
-        return { type: 'questions', data: parsed as AiQuestionsResponse };
+        const result = { type: 'questions', data: parsed as AiQuestionsResponse } as AiAnalysisResult;
+        this.analysisCache.set(inputHash, {
+          createdAt: Date.now(),
+          version: this.pipelineVersion,
+          result,
+        });
+        return result;
       }
 
       if (
@@ -263,7 +454,13 @@ History: ${historyStr}`;
         Array.isArray(parsed.subtasks) &&
         parsed.subtasks.length > 0
       ) {
-        return { type: 'estimate', data: parsed as AiEstimateResponse };
+        const result = { type: 'estimate', data: parsed as AiEstimateResponse } as AiAnalysisResult;
+        this.analysisCache.set(inputHash, {
+          createdAt: Date.now(),
+          version: this.pipelineVersion,
+          result,
+        });
+        return result;
       }
 
       throw new Error('Invalid AI response structure');
@@ -359,36 +556,41 @@ History: ${historyStr}`;
       return { correctedEstimate: original, averageErrorRatio: 0 };
     }
 
-    // Determine target archetype category to score similarity
-    const targetPrior = this.getTaskPriors(taskDto);
-
-    const items: { error: number; weight: number }[] = [];
-    let idx = 0;
-    for (const task of similarTasks) {
-      const aiEstimate = task.estimates.find(
-        (e) => e.source === EstimateSource.AI
-      );
-      const feedback = task.feedbacks[0];
+    // Build semantic texts
+    const targetText = `title: ${taskDto.title}\ntech: ${taskDto.technology}\nexp: ${taskDto.experienceLevel}\n${taskDto.tags?.join(', ') ?? ''}\n${taskDto.description ?? ''}`;
+    const past: {
+      id: string;
+      text: string;
+      ai: number;
+      actual: number;
+    }[] = [];
+    for (const t of similarTasks) {
+      const aiEstimate = t.estimates.find((e) => e.source === EstimateSource.AI);
+      const feedback = t.feedbacks[0];
       if (!aiEstimate || !feedback) continue;
       if (!aiEstimate.finalEstimate || aiEstimate.finalEstimate <= 0) continue;
       if (!feedback.actualHours || feedback.actualHours <= 0) continue;
+      const text = `title: ${t.title}\ntech: ${t.technology}\nexp: ${t.experienceLevel}\n${(t as any).tags?.join(', ') ?? ''}\n${t.description ?? ''}`;
+      past.push({ id: t.id, text, ai: aiEstimate.finalEstimate, actual: feedback.actualHours });
+    }
 
-      const errorRatio =
-        (feedback.actualHours - aiEstimate.finalEstimate) /
-        aiEstimate.finalEstimate;
+    if (past.length < 3) {
+      return { correctedEstimate: original, averageErrorRatio: 0 };
+    }
 
-      // Similarity 0..1
-      const sim = this.computeSimilarityScore(
-        task as any,
-        taskDto,
-        targetPrior.category
-      );
-      // Freshness weight: more recent → closer to 1.0
-      const recency = 1 - idx / Math.max(1, similarTasks.length - 1); // 1..0
-      const weight = 0.6 * sim + 0.4 * recency;
-
-      items.push({ error: errorRatio, weight });
-      idx++;
+    // Compute embeddings for target + batch of past
+    const embeddings = await this.getEmbeddings([targetText, ...past.map((p) => p.text)]);
+    const targetVec = embeddings[0];
+    const items: { error: number; weight: number; sim: number; id: string }[] = [];
+    for (let i = 0; i < past.length; i++) {
+      const vec = embeddings[i + 1];
+      const sim = Math.max(0, this.cosine(targetVec, vec)); // 0..1
+      // error ratio vs AI estimate
+      const errorRatio = (past[i].actual - past[i].ai) / past[i].ai;
+      // recency by position (already ordered DESC); more recent → higher
+      const recency = 1 - i / Math.max(1, past.length - 1);
+      const weight = 0.7 * sim + 0.3 * recency;
+      items.push({ error: errorRatio, weight, sim, id: past[i].id });
     }
 
     if (items.length < 3) {
@@ -406,6 +608,17 @@ History: ${historyStr}`;
     // Keep top-15 by weight to reduce noise
     clipped.sort((a, b) => b.weight - a.weight);
     const top = clipped.slice(0, Math.min(15, clipped.length));
+
+    // Optional: log a brief similar-tasks snapshot
+    try {
+      const sample = items
+        .slice()
+        .sort((a, b) => b.weight - a.weight)
+        .slice(0, 3)
+        .map((x) => `${x.id.slice(0, 8)} sim=${x.weight.toFixed(2)}`)
+        .join(', ');
+      if (sample) this.logger.log(`Similar tasks (semantic): ${sample}`);
+    } catch {}
 
     // Weighted median error
     const medianError = this.computeWeightedMedian(
@@ -795,6 +1008,208 @@ Description: ${taskDto.description}`;
     if (/react|next/i.test(taskDto.technology)) multiplier *= 0.92;
     else if (/nestjs|java|graphql/i.test(taskDto.technology)) multiplier *= 1.1;
 
+    // Structured field-driven coefficients
+    const td: any = taskDto as any;
+
+    // UI design complexity
+    switch (td.uiDesignComplexity) {
+      case 'LOW':
+        multiplier *= 1.05;
+        log.push('UI complexity LOW: x1.05');
+        break;
+      case 'MEDIUM':
+        multiplier *= 1.1;
+        log.push('UI complexity MEDIUM: x1.10');
+        break;
+      case 'HIGH':
+        multiplier *= 1.2;
+        log.push('UI complexity HIGH: x1.20');
+        break;
+    }
+
+    // Data migration complexity
+    if (td.needsDataMigration) {
+      multiplier *= 1.1;
+      log.push('Data migration: base x1.10');
+      switch (td.migrationComplexity) {
+        case 'LOW':
+          multiplier *= 1.05;
+          log.push('Migration LOW: x1.05');
+          break;
+        case 'MEDIUM':
+          multiplier *= 1.1;
+          log.push('Migration MEDIUM: x1.10');
+          break;
+        case 'HIGH':
+          multiplier *= 1.2;
+          log.push('Migration HIGH: x1.20');
+          break;
+      }
+    }
+
+    // Complexity tags
+    const tags: string[] = Array.isArray(td.complexityTags) ? td.complexityTags : [];
+    for (const t of tags) {
+      switch (String(t)) {
+        case 'new_infra':
+          multiplier *= 1.12;
+          log.push('Tag new_infra: x1.12');
+          break;
+        case 'legacy_code':
+          multiplier *= 1.2;
+          log.push('Tag legacy_code: x1.20');
+          break;
+        case 'refactor':
+          multiplier *= 1.08;
+          log.push('Tag refactor: x1.08');
+          break;
+        case 'migration':
+          multiplier *= 1.12;
+          log.push('Tag migration: x1.12');
+          break;
+        case 'third_party_integration':
+          multiplier *= 1.15;
+          log.push('Tag third_party_integration: x1.15');
+          break;
+        case 'concurrency':
+          multiplier *= 1.2;
+          log.push('Tag concurrency: x1.20');
+          break;
+        case 'data_modeling':
+          multiplier *= 1.12;
+          log.push('Tag data_modeling: x1.12');
+          break;
+        case 'ai_integration':
+          multiplier *= 1.12;
+          log.push('Tag ai_integration: x1.12');
+          break;
+        case 'security_hardening':
+          multiplier *= 1.15;
+          log.push('Tag security_hardening: x1.15');
+          break;
+        case 'performance_critical':
+          multiplier *= 1.15;
+          log.push('Tag performance_critical: x1.15');
+          break;
+      }
+    }
+
+    // Testing
+    if (td.testing) {
+      const t = td.testing || {};
+      if (t.integration) {
+        multiplier *= 1.1;
+        log.push('Testing integration: x1.10');
+      }
+      if (t.e2e) {
+        multiplier *= 1.12;
+        log.push('Testing e2e: x1.12');
+      }
+      if (t.performance) {
+        multiplier *= 1.08;
+        log.push('Testing performance: x1.08');
+      }
+      if (t.security) {
+        multiplier *= 1.1;
+        log.push('Testing security: x1.10');
+      }
+      if (typeof t.unitCoverageTarget === 'number') {
+        const frac = Math.max(0, Math.min(1, t.unitCoverageTarget / 100));
+        const covMult = 1 + 0.1 * frac; // up to +10%
+        multiplier *= covMult;
+        log.push(`Unit coverage target ${t.unitCoverageTarget}%: x${covMult.toFixed(2)}`);
+      }
+    }
+
+    // Documentation
+    if (td.documentation) {
+      const d = td.documentation || {};
+      if (d.userDocs) {
+        multiplier *= 1.05;
+        log.push('Docs userDocs: x1.05');
+      }
+      if (d.apiDocs) {
+        multiplier *= 1.07;
+        log.push('Docs apiDocs: x1.07');
+      }
+      if (d.readme) {
+        multiplier *= 1.03;
+        log.push('Docs readme: x1.03');
+      }
+      if (d.changelog) {
+        multiplier *= 1.02;
+        log.push('Docs changelog: x1.02');
+      }
+    }
+
+    // Integrations
+    if (Array.isArray(td.integrations) && td.integrations.length) {
+      for (const integ of td.integrations) {
+        let m = 1.02; // base overhead per integration
+        const interaction = String(integ.interaction || '').toLowerCase();
+        if (interaction === 'write') m *= 1.04;
+        else if (interaction === 'read_write') m *= 1.06;
+
+        const auth = String(integ.auth || '').toLowerCase();
+        if (auth === 'api_key') m *= 1.02;
+        else if (auth === 'oauth') m *= 1.04;
+        else if (auth === 'saml') m *= 1.05;
+        else if (auth === 'basic') m *= 1.01;
+
+        multiplier *= m;
+        log.push(`Integration ${integ.name || ''} (${interaction}${auth ? ", auth=" + auth : ''}): x${m.toFixed(2)}`);
+      }
+    }
+
+    // Non-functional requirements
+    if (Array.isArray(td.nfrs)) {
+      for (const n of td.nfrs) {
+        const cat = String(n?.category || '').toLowerCase();
+        switch (cat) {
+          case 'performance':
+            multiplier *= 1.1;
+            log.push('NFR performance: x1.10');
+            break;
+          case 'security':
+            multiplier *= 1.12;
+            log.push('NFR security: x1.12');
+            break;
+          case 'reliability':
+            multiplier *= 1.08;
+            log.push('NFR reliability: x1.08');
+            break;
+          case 'scalability':
+            multiplier *= 1.1;
+            log.push('NFR scalability: x1.10');
+            break;
+          case 'usability':
+            multiplier *= 1.05;
+            log.push('NFR usability: x1.05');
+            break;
+          case 'observability':
+            multiplier *= 1.06;
+            log.push('NFR observability: x1.06');
+            break;
+          case 'compliance':
+            multiplier *= 1.12;
+            log.push('NFR compliance: x1.12');
+            break;
+          case 'maintainability':
+            multiplier *= 1.04;
+            log.push('NFR maintainability: x1.04');
+            break;
+          case 'cost':
+            // cost constraint can reduce scope
+            multiplier *= 0.98;
+            log.push('NFR cost: x0.98');
+            break;
+        }
+      }
+    }
+
+    // Clamp multiplier to avoid extremes
+    multiplier = Math.max(0.5, Math.min(3, multiplier));
+
     const adjusted = original * multiplier;
     log.push(`Modifier x${multiplier.toFixed(2)} → ${adjusted.toFixed(1)}h`);
 
@@ -1083,10 +1498,61 @@ Description: ${taskDto.description}`;
             ', '
           )}.`
         : '';
+    const details: string[] = [];
+    if ((taskDto as any).acceptanceCriteria?.length) {
+      details.push(`- Acceptance Criteria: ${(taskDto as any).acceptanceCriteria.join('; ')}`);
+    }
+    if ((taskDto as any).assumptions?.length) {
+      details.push(`- Assumptions: ${(taskDto as any).assumptions.join('; ')}`);
+    }
+    if ((taskDto as any).constraints?.length) {
+      details.push(`- Constraints: ${(taskDto as any).constraints.join('; ')}`);
+    }
+    if ((taskDto as any).nfrs?.length) {
+      const nfrStr = (taskDto as any).nfrs
+        .map((n: any) => `${n.category}: ${n.requirement}${n.target ? ` (target: ${n.target})` : ''}`)
+        .join(' | ');
+      details.push(`- Non-Functional Requirements: ${nfrStr}`);
+    }
+    if ((taskDto as any).integrations?.length) {
+      const intStr = (taskDto as any).integrations
+        .map(
+          (i: any) => `${i.name} [${i.type || 'n/a'}, ${i.interaction}${i.auth ? `, auth=${i.auth}` : ''}${i.sandbox ? ', sandbox' : ''}]`
+        )
+        .join(' | ');
+      details.push(`- Integrations: ${intStr}`);
+    }
+    if ((taskDto as any).testing) {
+      const t = (taskDto as any).testing;
+      details.push(
+        `- Testing: unit=${!!t.unit}${typeof t.unitCoverageTarget === 'number' ? ` (coverage ${t.unitCoverageTarget}%)` : ''}, integration=${!!t.integration}, e2e=${!!t.e2e}, performance=${!!t.performance}, security=${!!t.security}`
+      );
+    }
+    if ((taskDto as any).documentation) {
+      const d = (taskDto as any).documentation;
+      details.push(
+        `- Documentation: userDocs=${!!d.userDocs}, apiDocs=${!!d.apiDocs}, readme=${!!d.readme}, changelog=${!!d.changelog}`
+      );
+    }
+    if ((taskDto as any).complexityTags?.length) {
+      details.push(`- Complexity Tags: ${((taskDto as any).complexityTags || []).join(', ')}`);
+    }
+    if ((taskDto as any).uiDesignComplexity) {
+      details.push(`- UI Design Complexity: ${(taskDto as any).uiDesignComplexity}`);
+    }
+    if ((taskDto as any).needsDataMigration) {
+      details.push(
+        `- Data Migration: needs=${!!(taskDto as any).needsDataMigration}, complexity=${(taskDto as any).migrationComplexity || 'n/a'}`
+      );
+    }
+
     return `
       The user provided the task: "${taskDto.title} - ${taskDto.description}".
+      Additional provided details (may be partial):
+      ${details.length ? details.join('\n      ') : '(none)'}
       Your task is to generate 3-7 critical, concise questions to clarify requirements needed for accurate time estimation.
-      Avoid generic questions; be specific and non-technical where possible.
+      Avoid generic questions; target the most impactful unknowns that affect scope, testing, design complexity, integrations, and NFRs.
+      Do not ask about project management topics (assignees, deadlines, sprints, status).
       ${missingHint}
       Return a JSON object: { "questions": [string, ...] } only.
     `;
@@ -1128,6 +1594,54 @@ Description: ${taskDto.description}`;
       );
     }
 
+    const details: string[] = [];
+    if ((taskDto as any).acceptanceCriteria?.length) {
+      details.push(`- Acceptance Criteria: ${(taskDto as any).acceptanceCriteria.join('; ')}`);
+    }
+    if ((taskDto as any).assumptions?.length) {
+      details.push(`- Assumptions: ${(taskDto as any).assumptions.join('; ')}`);
+    }
+    if ((taskDto as any).constraints?.length) {
+      details.push(`- Constraints: ${(taskDto as any).constraints.join('; ')}`);
+    }
+    if ((taskDto as any).nfrs?.length) {
+      const nfrStr = (taskDto as any).nfrs
+        .map((n: any) => `${n.category}: ${n.requirement}${n.target ? ` (target: ${n.target})` : ''}`)
+        .join(' | ');
+      details.push(`- Non-Functional Requirements: ${nfrStr}`);
+    }
+    if ((taskDto as any).integrations?.length) {
+      const intStr = (taskDto as any).integrations
+        .map(
+          (i: any) => `${i.name} [${i.type || 'n/a'}, ${i.interaction}${i.auth ? `, auth=${i.auth}` : ''}${i.sandbox ? ', sandbox' : ''}]`
+        )
+        .join(' | ');
+      details.push(`- Integrations: ${intStr}`);
+    }
+    if ((taskDto as any).testing) {
+      const t = (taskDto as any).testing;
+      details.push(
+        `- Testing: unit=${!!t.unit}${typeof t.unitCoverageTarget === 'number' ? ` (coverage ${t.unitCoverageTarget}%)` : ''}, integration=${!!t.integration}, e2e=${!!t.e2e}, performance=${!!t.performance}, security=${!!t.security}`
+      );
+    }
+    if ((taskDto as any).documentation) {
+      const d = (taskDto as any).documentation;
+      details.push(
+        `- Documentation: userDocs=${!!d.userDocs}, apiDocs=${!!d.apiDocs}, readme=${!!d.readme}, changelog=${!!d.changelog}`
+      );
+    }
+    if ((taskDto as any).complexityTags?.length) {
+      details.push(`- Complexity Tags: ${((taskDto as any).complexityTags || []).join(', ')}`);
+    }
+    if ((taskDto as any).uiDesignComplexity) {
+      details.push(`- UI Design Complexity: ${(taskDto as any).uiDesignComplexity}`);
+    }
+    if ((taskDto as any).needsDataMigration) {
+      details.push(
+        `- Data Migration: needs=${!!(taskDto as any).needsDataMigration}, complexity=${(taskDto as any).migrationComplexity || 'n/a'}`
+      );
+    }
+
     return `
       You are an expert software engineering estimator.
       Your task is to analyze the following task and provide a detailed estimate.
@@ -1142,6 +1656,7 @@ Description: ${taskDto.description}`;
       - Description: ${taskDto.description}
       - Technology: ${taskDto.technology}
       - Experience Level Required: ${taskDto.experienceLevel}
+      ${details.length ? details.join('\n      ') : ''}
 
       **Clarification History:**
       ${history.length > 0 ? historyStr : 'No clarification was needed.'}

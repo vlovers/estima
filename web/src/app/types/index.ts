@@ -62,6 +62,65 @@ export interface Project {
   id: string;
 }
 
+export type NfrCategory =
+  | 'performance'
+  | 'reliability'
+  | 'security'
+  | 'scalability'
+  | 'usability'
+  | 'observability'
+  | 'compliance'
+  | 'maintainability'
+  | 'cost';
+
+export interface NfrDto {
+  category: NfrCategory;
+  requirement: string;
+  target?: string;
+}
+
+export type IntegrationType = 'internal' | 'external' | 'third_party';
+export type IntegrationInteraction = 'read' | 'write' | 'read_write';
+export type IntegrationAuth = 'none' | 'api_key' | 'oauth' | 'saml' | 'basic';
+
+export interface IntegrationDto {
+  name: string;
+  type?: IntegrationType;
+  interaction: IntegrationInteraction;
+  auth?: IntegrationAuth;
+  sandbox?: boolean;
+}
+
+export interface TestingDto {
+  unit?: boolean;
+  integration?: boolean;
+  e2e?: boolean;
+  unitCoverageTarget?: number; // 0..100
+  performance?: boolean;
+  security?: boolean;
+}
+
+export interface DocumentationDto {
+  userDocs?: boolean;
+  apiDocs?: boolean;
+  readme?: boolean;
+  changelog?: boolean;
+}
+
+export type UiDesignComplexity = 'NONE' | 'LOW' | 'MEDIUM' | 'HIGH';
+export type MigrationComplexity = 'LOW' | 'MEDIUM' | 'HIGH';
+export type ComplexityTag =
+  | 'new_infra'
+  | 'legacy_code'
+  | 'refactor'
+  | 'migration'
+  | 'third_party_integration'
+  | 'concurrency'
+  | 'data_modeling'
+  | 'ai_integration'
+  | 'security_hardening'
+  | 'performance_critical';
+
 export interface CreateTaskDto {
   experienceLevel: 'JUNIOR' | 'MIDDLE' | 'SENIOR';
   manualEstimate?: number;
@@ -72,6 +131,18 @@ export interface CreateTaskDto {
   projectId: string;
   tags: string[];
   title: string;
+  // Structured inputs (optional)
+  acceptanceCriteria?: string[];
+  assumptions?: string[];
+  constraints?: string[];
+  nfrs?: NfrDto[];
+  integrations?: IntegrationDto[];
+  testing?: TestingDto;
+  documentation?: DocumentationDto;
+  complexityTags?: ComplexityTag[];
+  uiDesignComplexity?: UiDesignComplexity;
+  needsDataMigration?: boolean;
+  migrationComplexity?: MigrationComplexity;
   // Optional generation flags supported by backend
   generateManagerNote?: boolean;
   generateRiskAnalysis?: boolean;

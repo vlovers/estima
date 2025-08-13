@@ -5,9 +5,12 @@ import { useState } from 'react';
 import {
   SegmentedControl,
   NumberInput,
+  MultiSelect,
   TagsInput,
   TextInput,
   Textarea,
+  Fieldset,
+  Divider,
   Switch,
   Button,
   Select,
@@ -27,6 +30,27 @@ const initialValues: Omit<CreateTaskDto, 'projectId'> = {
   manualEstimate: 0,
   generateManagerNote: false,
   generateRiskAnalysis: false,
+  acceptanceCriteria: [],
+  assumptions: [],
+  constraints: [],
+  testing: {
+    unit: true,
+    integration: false,
+    e2e: false,
+    unitCoverageTarget: 0,
+    performance: false,
+    security: false,
+  },
+  documentation: {
+    userDocs: false,
+    apiDocs: false,
+    readme: false,
+    changelog: false,
+  },
+  complexityTags: [],
+  uiDesignComplexity: 'NONE',
+  needsDataMigration: false,
+  migrationComplexity: 'LOW',
 };
 
 interface CreateTaskFormProps {
@@ -47,6 +71,33 @@ export function CreateTaskForm({ projectId, onSuccess }: CreateTaskFormProps) {
   const handleFormChange = (field: string, value: any) => {
     setFormValues((prev) => ({ ...prev, [field]: value }));
   };
+
+  const handleNestedChange = (
+    parent: 'testing' | 'documentation',
+    field: string,
+    value: any
+  ) => {
+    setFormValues((prev) => ({
+      ...prev,
+      [parent]: {
+        ...(prev as any)[parent],
+        [field]: value,
+      },
+    }));
+  };
+
+  const complexityTagOptions = [
+    { value: 'new_infra', label: 'New Infra' },
+    { value: 'legacy_code', label: 'Legacy Code' },
+    { value: 'refactor', label: 'Refactor' },
+    { value: 'migration', label: 'Migration' },
+    { value: 'third_party_integration', label: '3rd-party Integration' },
+    { value: 'concurrency', label: 'Concurrency' },
+    { value: 'data_modeling', label: 'Data Modeling' },
+    { value: 'ai_integration', label: 'AI Integration' },
+    { value: 'security_hardening', label: 'Security Hardening' },
+    { value: 'performance_critical', label: 'Performance Critical' },
+  ];
 
   const handleSubmit = () => {
     if (mode === 'form') {
@@ -145,6 +196,188 @@ export function CreateTaskForm({ projectId, onSuccess }: CreateTaskFormProps) {
                   }
                 />
               </Group>
+              <Divider my="md" />
+              <Fieldset legend="Structured inputs (optional)">
+                <TagsInput
+                  label="Acceptance Criteria"
+                  placeholder="Add items"
+                  value={formValues.acceptanceCriteria || []}
+                  onChange={(value) =>
+                    handleFormChange('acceptanceCriteria', value)
+                  }
+                  clearable
+                />
+                <TagsInput
+                  label="Assumptions"
+                  placeholder="Add items"
+                  value={formValues.assumptions || []}
+                  onChange={(value) => handleFormChange('assumptions', value)}
+                  clearable
+                />
+                <TagsInput
+                  label="Constraints"
+                  placeholder="Add items"
+                  value={formValues.constraints || []}
+                  onChange={(value) => handleFormChange('constraints', value)}
+                  clearable
+                />
+
+                <MultiSelect
+                  label="Complexity Tags"
+                  data={complexityTagOptions}
+                  searchable
+                  clearable
+                  value={formValues.complexityTags || []}
+                  onChange={(value) => handleFormChange('complexityTags', value)}
+                />
+
+                <Group grow>
+                  <Select
+                    label="UI Design Complexity"
+                    data={['NONE', 'LOW', 'MEDIUM', 'HIGH']}
+                    value={formValues.uiDesignComplexity}
+                    onChange={(value) =>
+                      handleFormChange('uiDesignComplexity', value)
+                    }
+                  />
+                  <Switch
+                    label="Needs Data Migration"
+                    checked={!!formValues.needsDataMigration}
+                    onChange={(e) =>
+                      handleFormChange('needsDataMigration', e.currentTarget.checked)
+                    }
+                  />
+                  <Select
+                    label="Migration Complexity"
+                    data={['LOW', 'MEDIUM', 'HIGH']}
+                    value={formValues.migrationComplexity}
+                    onChange={(value) =>
+                      handleFormChange('migrationComplexity', value)
+                    }
+                    disabled={!formValues.needsDataMigration}
+                  />
+                </Group>
+
+                <Divider my="sm" label="Testing" />
+                <Group grow>
+                  <Switch
+                    label="Unit Tests"
+                    checked={!!formValues.testing?.unit}
+                    onChange={(e) =>
+                      handleNestedChange('testing', 'unit', e.currentTarget.checked)
+                    }
+                  />
+                  <NumberInput
+                    label="Unit Coverage Target (%)"
+                    min={0}
+                    max={100}
+                    value={formValues.testing?.unitCoverageTarget}
+                    onChange={(value) =>
+                      handleNestedChange('testing', 'unitCoverageTarget', value)
+                    }
+                  />
+                </Group>
+                <Group grow>
+                  <Switch
+                    label="Integration Tests"
+                    checked={!!formValues.testing?.integration}
+                    onChange={(e) =>
+                      handleNestedChange(
+                        'testing',
+                        'integration',
+                        e.currentTarget.checked
+                      )
+                    }
+                  />
+                  <Switch
+                    label="E2E Tests"
+                    checked={!!formValues.testing?.e2e}
+                    onChange={(e) =>
+                      handleNestedChange('testing', 'e2e', e.currentTarget.checked)
+                    }
+                  />
+                </Group>
+                <Group grow>
+                  <Switch
+                    label="Performance Testing"
+                    checked={!!formValues.testing?.performance}
+                    onChange={(e) =>
+                      handleNestedChange(
+                        'testing',
+                        'performance',
+                        e.currentTarget.checked
+                      )
+                    }
+                  />
+                  <Switch
+                    label="Security Testing"
+                    checked={!!formValues.testing?.security}
+                    onChange={(e) =>
+                      handleNestedChange('testing', 'security', e.currentTarget.checked)
+                    }
+                  />
+                </Group>
+
+                <Divider my="sm" label="Documentation" />
+                <Group grow>
+                  <Switch
+                    label="User Docs"
+                    checked={!!formValues.documentation?.userDocs}
+                    onChange={(e) =>
+                      handleNestedChange(
+                        'documentation',
+                        'userDocs',
+                        e.currentTarget.checked
+                      )
+                    }
+                  />
+                  <Switch
+                    label="API Docs"
+                    checked={!!formValues.documentation?.apiDocs}
+                    onChange={(e) =>
+                      handleNestedChange(
+                        'documentation',
+                        'apiDocs',
+                        e.currentTarget.checked
+                      )
+                    }
+                  />
+                </Group>
+                <Group grow>
+                  <Switch
+                    label="README"
+                    checked={!!formValues.documentation?.readme}
+                    onChange={(e) =>
+                      handleNestedChange('documentation', 'readme', e.currentTarget.checked)
+                    }
+                  />
+                  <Switch
+                    label="Changelog"
+                    checked={!!formValues.documentation?.changelog}
+                    onChange={(e) =>
+                      handleNestedChange(
+                        'documentation',
+                        'changelog',
+                        e.currentTarget.checked
+                      )
+                    }
+                  />
+                </Group>
+
+                <Divider my="sm" />
+                <Textarea
+                  label="NFRs (use JSON tab for detailed entries)"
+                  description="Tip: switch to JSON mode to provide an array of { category, requirement, target? }"
+                  placeholder="Use JSON tab"
+                  disabled
+                />
+                <Textarea
+                  label="Integrations (use JSON tab for detailed entries)"
+                  description="Tip: switch to JSON mode to provide an array of { name, type?, interaction, auth?, sandbox? }"
+                  placeholder="Use JSON tab"
+                  disabled
+                />
+              </Fieldset>
               <Group grow>
                 <Switch
                   label="Generate Manager's Note"

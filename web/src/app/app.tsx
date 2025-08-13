@@ -13,10 +13,11 @@ import { useDisclosure } from '@mantine/hooks';
 import { LoginPage } from './pages/LoginPage';
 
 import {
+  ActionIcon,
   AppShell,
-  NavLink,
-  Burger,
+  Tooltip,
   Divider,
+  Burger,
   Group,
   Stack,
   Title,
@@ -42,7 +43,7 @@ export function App() {
               <AppShell
                 header={{ height: 60 }}
                 navbar={{
-                  width: 300,
+                  width: 64,
                   breakpoint: 'sm',
                   collapsed: { mobile: !opened },
                 }}
@@ -63,24 +64,34 @@ export function App() {
                   </Group>
                 </AppShell.Header>
 
-                <AppShell.Navbar p="md">
-                  <Stack justify="space-between" h="100%">
-                    <Stack>
-                      <NavLink
-                        label="Projects"
-                        component={Link}
-                        to="/"
-                        leftSection={<IconHome size="1rem" stroke={1.5} />}
-                      />
+                <AppShell.Navbar p="sm">
+                  <Stack justify="space-between" h="100%" align="center">
+                    <Stack align="center">
+                      <Tooltip label="Projects" position="right" withArrow>
+                        <ActionIcon
+                          component={Link}
+                          to="/"
+                          size="lg"
+                          variant="subtle"
+                          aria-label="Projects"
+                        >
+                          <IconHome size="1.2rem" stroke={1.6} />
+                        </ActionIcon>
+                      </Tooltip>
                     </Stack>
 
-                    <Stack>
-                      <Divider />
-                      <NavLink
-                        label="Logout"
-                        onClick={handleLogout}
-                        leftSection={<IconLogout size="1rem" stroke={1.5} />}
-                      />
+                    <Stack align="center" w="100%">
+                      <Divider w="100%" />
+                      <Tooltip label="Logout" position="right" withArrow>
+                        <ActionIcon
+                          onClick={handleLogout}
+                          size="lg"
+                          variant="subtle"
+                          aria-label="Logout"
+                        >
+                          <IconLogout size="1.2rem" stroke={1.6} />
+                        </ActionIcon>
+                      </Tooltip>
                     </Stack>
                   </Stack>
                 </AppShell.Navbar>

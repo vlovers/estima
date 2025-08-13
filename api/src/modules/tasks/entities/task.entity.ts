@@ -42,6 +42,57 @@ export class Task {
   @Column({ type: 'simple-array', nullable: true })
   tags: string[];
 
+  // Structured fields for improved estimation accuracy
+  @Column({ type: 'jsonb', nullable: true, default: [] })
+  acceptanceCriteria: string[];
+
+  @Column({ type: 'jsonb', nullable: true, default: [] })
+  assumptions: string[];
+
+  @Column({ type: 'jsonb', nullable: true, default: [] })
+  constraints: string[];
+
+  @Column({ type: 'jsonb', nullable: true, default: [] })
+  nfrs: { category: string; requirement: string; target?: string }[];
+
+  @Column({ type: 'jsonb', nullable: true, default: [] })
+  integrations: {
+    name: string;
+    type?: string;
+    interaction: string;
+    auth?: string;
+    sandbox?: boolean;
+  }[];
+
+  @Column({ type: 'jsonb', nullable: true })
+  testing:
+    | {
+        unit?: boolean;
+        integration?: boolean;
+        e2e?: boolean;
+        unitCoverageTarget?: number;
+        performance?: boolean;
+        security?: boolean;
+      }
+    | null;
+
+  @Column({ type: 'jsonb', nullable: true })
+  documentation:
+    | { userDocs?: boolean; apiDocs?: boolean; readme?: boolean; changelog?: boolean }
+    | null;
+
+  @Column({ type: 'jsonb', nullable: true, default: [] })
+  complexityTags: string[];
+
+  @Column({ type: 'varchar', nullable: true })
+  uiDesignComplexity: 'NONE' | 'LOW' | 'MEDIUM' | 'HIGH' | null;
+
+  @Column({ type: 'boolean', default: false })
+  needsDataMigration: boolean;
+
+  @Column({ type: 'varchar', nullable: true })
+  migrationComplexity: 'LOW' | 'MEDIUM' | 'HIGH' | null;
+
   @Column({ type: 'jsonb', nullable: true, default: [] })
   riskAnalysis: { risk: string; mitigation: string }[];
 

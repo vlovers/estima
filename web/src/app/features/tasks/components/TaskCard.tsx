@@ -1,31 +1,30 @@
-import React from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { notifications } from '@mantine/notifications';
 import { Estimate, Task } from '../../../types';
 import { clarifyTask } from '../api/tasks.api';
+import React from 'react';
 
 import {
+  CopyButton,
   ThemeIcon,
   ActionIcon,
   Accordion,
   Checkbox,
   TextInput,
+  Collapse,
+  Drawer,
+  Tooltip,
   Button,
   Badge,
   Group,
   Menu,
   Stack,
   Paper,
+  Code,
   Card,
+  Title,
   Text,
   Box,
-  Title,
-  Tooltip,
-  Drawer,
-  Code,
-  CopyButton,
-  Collapse,
-  rem,
 } from '@mantine/core';
 
 import {
@@ -63,6 +62,13 @@ function computeSymmetricDivergence(
   const denom = td + bu;
   if (denom <= 0) return undefined;
   return (200 * Math.abs(td - bu)) / denom;
+}
+
+function divergenceColor(div?: number): string {
+  if (div == null) return 'gray';
+  if (div < 20) return 'green';
+  if (div < 50) return 'yellow';
+  return 'red';
 }
 
 function formatHours(h?: number): string {
@@ -170,108 +176,7 @@ function parseEstimationDetails(explanation?: string | null): {
   };
 }
 
-function RangeBar({
-  p10,
-  p50,
-  p90,
-}: {
-  p10: number;
-  p50: number;
-  p90: number;
-}) {
-  const width = 260;
-  const range = Math.max(1e-6, p90 - p10);
-  const rel = (v: number) => ((v - p10) / range) * width;
-  const p10X = 0; // by definition of rel()
-  const p50X = rel(Math.min(Math.max(p50, p10), p90));
-  const p90X = rel(p90);
-  const segmentWidth = Math.max(2, p90X - p10X); // ensure visible even if equal
-
-  return (
-    <Box style={{ width: 'fit-content' }}>
-      <Box
-        style={{
-          position: 'relative',
-          width,
-          height: rem(12),
-          background: 'var(--mantine-color-gray-2)',
-          borderRadius: rem(6),
-        }}
-      >
-        {/* Highlighted segment from p10 to p90 */}
-        <Box
-          style={{
-            position: 'absolute',
-            left: p10X,
-            top: 0,
-            width: segmentWidth,
-            height: '100%',
-            background:
-              'linear-gradient(90deg, var(--mantine-color-red-4), var(--mantine-color-yellow-4), var(--mantine-color-green-4))',
-            opacity: 0.45,
-            borderRadius: rem(6),
-          }}
-        />
-
-        {/* p10 marker */}
-        <Tooltip label={`p10 ${p10}h`} withinPortal>
-          <Box
-            style={{
-              position: 'absolute',
-              left: p10X - 1,
-              top: -4,
-              width: 2,
-              height: rem(20),
-              background: 'var(--mantine-color-gray-6)',
-              borderRadius: 2,
-            }}
-          />
-        </Tooltip>
-
-        {/* p50 marker */}
-        <Tooltip label={`p50 ${p50}h`} withinPortal>
-          <Box
-            style={{
-              position: 'absolute',
-              left: p50X - 1,
-              top: -6,
-              width: 2,
-              height: rem(24),
-              background: 'var(--mantine-color-blue-6)',
-              borderRadius: 2,
-            }}
-          />
-        </Tooltip>
-
-        {/* p90 marker */}
-        <Tooltip label={`p90 ${p90}h`} withinPortal>
-          <Box
-            style={{
-              position: 'absolute',
-              left: p90X - 1,
-              top: -4,
-              width: 2,
-              height: rem(20),
-              background: 'var(--mantine-color-gray-6)',
-              borderRadius: 2,
-            }}
-          />
-        </Tooltip>
-      </Box>
-      <Group justify="space-between" mt={6}>
-        <Text fz="xs" c="dimmed">
-          p10 {p10}h
-        </Text>
-        <Text fz="xs" fw={600}>
-          p50 {p50}h
-        </Text>
-        <Text fz="xs" c="dimmed">
-          p90 {p90}h
-        </Text>
-      </Group>
-    </Box>
-  );
-}
+// Removed the p10/p50/p90 diagram for a cleaner UI. We'll surface range info via badges + tooltips.
 
 function MetadataItem({
   icon,
@@ -354,6 +259,9 @@ function EstimateDisplay({
   label: string;
 }) {
   const details = parseEstimationDetails(estimate.explanation);
+  const divergence =
+    estimate.divergencePct ??
+    computeSymmetricDivergence(details.topDown, details.bottomUp);
   return (
     <Stack gap="xs">
       <Group justify="space-between">
@@ -391,10 +299,35 @@ function EstimateDisplay({
           )}
         </Group>
       </Group>
-      {/* Range bar if we can parse it */}
-      {details.p10 != null && details.p50 != null && details.p90 != null && (
-        <RangeBar p10={details.p10} p50={details.p50} p90={details.p90} />
-      )}
+      {/* Clean badges instead of diagram */}
+      <Group gap="xs">
+        {details.p10 != null && details.p90 != null && (
+          <Tooltip
+            withinPortal
+            label={`p10 ${formatHours(details.p10)} • p50 ${formatHours(
+              details.p50
+            )} • p90 ${formatHours(details.p90)}`}
+          >
+            <Badge variant="outline" color="gray">
+              Range {formatHours(details.p10)}–{formatHours(details.p90)}
+            </Badge>
+          </Tooltip>
+        )}
+        {divergence != null && (
+          <Tooltip withinPortal label={`Divergence: ${Math.round(divergence)}%`}>
+            <Badge variant="light" color={divergenceColor(divergence)}>
+              {Math.round(divergence)}% div
+            </Badge>
+          </Tooltip>
+        )}
+        {details.topDown != null && details.bottomUp != null && (
+          <Tooltip withinPortal label="Top-down vs Bottom-up">
+            <Badge variant="light" color="gray">
+              TD {formatHours(details.topDown)} · BU {formatHours(details.bottomUp)}
+            </Badge>
+          </Tooltip>
+        )}
+      </Group>
     </Stack>
   );
 }
@@ -403,9 +336,11 @@ function ClarificationForm({ task }: { task: Task }) {
   const queryClient = useQueryClient();
   const { mutate, isPending } = useMutation({
     mutationFn: (clarifications: { question: string; answer: string }[]) =>
-      clarifyTask(task.id, { clarifications }),
+      // clarifyTask expects a single object argument: { id, clarifications }
+      clarifyTask({ id: task.id, clarifications }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['tasks'] });
+      // Refresh the project query so tasks re-fetch and questions disappear
+      queryClient.invalidateQueries({ queryKey: ['project'] });
       try {
         localStorage.setItem(`clarify-open-${task.id}`, 'false');
       } catch {}
@@ -493,6 +428,19 @@ function ClarificationForm({ task }: { task: Task }) {
       <Text c="dimmed" fz="sm" pt="xs">
         The AI needs more information. Please answer the questions below.
       </Text>
+      {/* Inferred top missing aspects (use the first 3 questions as hints) */}
+      {questionsToAnswer.length > 0 && (
+        <Group gap={6} pt="xs" wrap="wrap">
+          <Text fw={500} fz="xs">
+            Missing (inferred):
+          </Text>
+          {questionsToAnswer.slice(0, 3).map((c, i) => (
+            <Badge key={i} size="xs" variant="outline" color="blue">
+              {c.question.replace(/\?+$/,'')}
+            </Badge>
+          ))}
+        </Group>
+      )}
       <Collapse in={open}>
         <form onSubmit={handleSubmit}>
           <Stack pt="xs">
@@ -733,7 +681,16 @@ export function TaskCard({ task, onEdit, onDelete }: TaskCardProps) {
           {details?.p10 != null &&
             details?.p50 != null &&
             details?.p90 != null && (
-              <RangeBar p10={details.p10} p50={details.p50} p90={details.p90} />
+              <Tooltip
+                withinPortal
+                label={`p10 ${formatHours(details.p10)} • p50 ${formatHours(
+                  details.p50
+                )} • p90 ${formatHours(details.p90)}`}
+              >
+                <Badge variant="outline" color="gray">
+                  Range {formatHours(details.p10)}–{formatHours(details.p90)}
+                </Badge>
+              </Tooltip>
             )}
           <Group>
             {typeof displayed?.confidence === 'number' && (
