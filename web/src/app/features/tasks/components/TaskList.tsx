@@ -9,6 +9,7 @@ interface TaskListProps {
   onDelete: (task: Task) => void;
   onFeedback: (task: Task) => void;
   onManualEstimate: (task: Task) => void;
+  onClarify?: (task: Task) => void;
   expandedTasks: Set<string>;
   onToggleTask: (taskId: string) => void;
 }
@@ -18,6 +19,7 @@ export function TaskList({
   onEdit,
   onDelete,
   onManualEstimate,
+  onClarify,
   onFeedback,
   expandedTasks,
   onToggleTask,
@@ -38,6 +40,7 @@ export function TaskList({
               onDelete={onDelete}
               onManualEstimate={onManualEstimate}
               onFeedback={onFeedback}
+              onClarify={onClarify}
               isExpanded={isExpanded}
               onToggle={() => onToggleTask(task.id)}
             />
@@ -50,6 +53,7 @@ export function TaskList({
                     onDelete={onDelete}
                     onManualEstimate={onManualEstimate}
                     onFeedback={onFeedback}
+                    onClarify={onClarify}
                     expandedTasks={expandedTasks}
                     onToggleTask={onToggleTask}
                   />

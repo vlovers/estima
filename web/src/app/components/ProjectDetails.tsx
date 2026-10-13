@@ -188,7 +188,11 @@ export function ProjectDetails() {
 
   return (
     <Stack>
-      <ProjectHeader project={project} onAddTaskClick={toggleForm} />
+      <ProjectHeader
+        project={project}
+        onAddTaskClick={toggleForm}
+        onEditProjectClick={() => undefined}
+      />
 
       <Divider my="md" />
 
@@ -290,7 +294,11 @@ export function ProjectDetails() {
         size="lg"
       >
         {selectedTask && (
-          <EditTaskForm task={selectedTask} onSuccess={closeEditModal} />
+          <EditTaskForm
+            task={selectedTask}
+            projectId={project.id}
+            onSuccess={closeEditModal}
+          />
         )}
       </Modal>
 

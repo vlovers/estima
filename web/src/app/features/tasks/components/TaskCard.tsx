@@ -38,7 +38,11 @@ import {
   IconCode,
   IconUser,
   IconTag,
+  IconMessageCircle2,
 } from '@tabler/icons-react';
+
+import { useDisclosure } from '@mantine/hooks';
+import { FeedbackModal } from './FeedbackModal';
 
 // --- Helper Components for the new design ---
 
@@ -463,16 +467,23 @@ function ClarificationForm({ task }: { task: Task }) {
     </Callout>
   );
 }
+
 // --- Main TaskCard Component ---
 
 interface TaskCardProps {
   task: Task;
   onEdit: (task: Task) => void;
   onDelete: (task: Task) => void;
+  onFeedback?: (task: Task) => void;
+  onManualEstimate?: (task: Task) => void;
+  onClarify?: (task: Task) => void;
+  isExpanded?: boolean;
+  onToggle?: () => void;
 }
 
 export function TaskCard({ task, onEdit, onDelete }: TaskCardProps) {
-  const hasSubtasks = task.subtasks && task.subtasks.length > 0;
+  const subtasks = task.subtasks || [];
+  const hasSubtasks = subtasks.length > 0;
   const finalEstimate = task.estimates?.find((e) => e.source === 'final');
   const aiSubtaskSum = task.estimates?.find(
     (e) => e.source === 'ai_subtask_sum'
@@ -482,6 +493,8 @@ export function TaskCard({ task, onEdit, onDelete }: TaskCardProps) {
   const managerNote = displayed?.managerExplanation;
   const details = extractDetailsFromEstimate(displayed);
   const [detailsOpen, setDetailsOpen] = React.useState(false);
+  const [feedbackModalOpened, { open: openFeedback, close: closeFeedback }] =
+    useDisclosure(false);
 
   return (
     <Card withBorder radius="md" p="lg">
@@ -506,13 +519,13 @@ export function TaskCard({ task, onEdit, onDelete }: TaskCardProps) {
               </Menu.Target>
               <Menu.Dropdown>
                 <Menu.Item
-                  icon={<IconPencil size={14} />}
+                  leftSection={<IconPencil size={14} />}
                   onClick={() => onEdit(task)}
                 >
                   Edit Task
                 </Menu.Item>
                 <Menu.Item
-                  icon={<IconTrash size={14} />}
+                  leftSection={<IconTrash size={14} />}
                   color="red"
                   onClick={() => onDelete(task)}
                 >
@@ -600,6 +613,14 @@ export function TaskCard({ task, onEdit, onDelete }: TaskCardProps) {
                 >
                   Details
                 </Button>
+                <Button
+                  size="xs"
+                  variant="subtle"
+                  leftSection={<IconMessageCircle2 size={14} />}
+                  onClick={openFeedback}
+                >
+                  Feedback
+                </Button>
               </Stack>
             </Group>
           )}
@@ -645,12 +666,12 @@ export function TaskCard({ task, onEdit, onDelete }: TaskCardProps) {
               <Accordion.Control>
                 <Group>
                   <IconChevronDown size={18} />
-                  <Text>Subtasks ({task.subtasks.length})</Text>
+                  <Text>Subtasks ({subtasks.length})</Text>
                 </Group>
               </Accordion.Control>
               <Accordion.Panel>
                 <Stack gap={0}>
-                  {(task.subtasks || []).map((subtask) => (
+                  {subtasks.map((subtask) => (
                     <SubtaskItem key={subtask.id} task={subtask} />
                   ))}
                 </Stack>
@@ -774,6 +795,12 @@ export function TaskCard({ task, onEdit, onDelete }: TaskCardProps) {
           )}
         </Stack>
       </Drawer>
+
+      <FeedbackModal
+        task={task}
+        opened={feedbackModalOpened}
+        onClose={closeFeedback}
+      />
     </Card>
   );
 }

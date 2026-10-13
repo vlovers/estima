@@ -71,7 +71,7 @@ export const useUpdateTaskMutation = (
   onSuccessCallback?: () => void
 ) => {
   const queryClient = useQueryClient();
-  return useMutation<Task, Error, UpdateTaskDto>({
+  return useMutation<Task, Error, { id: string } & UpdateTaskDto>({
     mutationFn: updateTask,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['project', _projectId] });

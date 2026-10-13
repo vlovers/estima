@@ -4,13 +4,14 @@ import { ProtectedRoute } from './components/ProtectedRoute';
 import { ThemeSwitcher } from './components/ThemeSwitcher';
 import { CreateProjectPage } from './pages/CreateProjectPage';
 import { Route, Routes, Outlet, Link } from 'react-router-dom';
-import { IconHome, IconLogout } from '@tabler/icons-react';
+import { IconHome, IconLayoutDashboard, IconLogout } from '@tabler/icons-react';
 import { ProjectDetails } from './components/ProjectDetails';
 import { EditProjectPage } from './pages/EditProjectPage';
 import { Notifications } from '@mantine/notifications';
 import { RegisterPage } from './pages/RegisterPage';
 import { useDisclosure } from '@mantine/hooks';
 import { LoginPage } from './pages/LoginPage';
+import { DashboardPage } from './pages/DashboardPage';
 
 import {
   ActionIcon,
@@ -78,6 +79,17 @@ export function App() {
                           <IconHome size="1.2rem" stroke={1.6} />
                         </ActionIcon>
                       </Tooltip>
+                      <Tooltip label="Dashboard" position="right" withArrow>
+                        <ActionIcon
+                          component={Link}
+                          to="/dashboard"
+                          size="lg"
+                          variant="subtle"
+                          aria-label="Dashboard"
+                        >
+                          <IconLayoutDashboard size="1.2rem" stroke={1.6} />
+                        </ActionIcon>
+                      </Tooltip>
                     </Stack>
 
                     <Stack align="center" w="100%">
@@ -103,6 +115,7 @@ export function App() {
             }
           >
             <Route path="/" element={<ProjectsList />} />
+            <Route path="/dashboard" element={<DashboardPage />} />
             <Route path="/projects/new" element={<CreateProjectPage />} />
             <Route path="/projects/:id" element={<ProjectDetails />} />
             <Route path="/projects/:id/edit" element={<EditProjectPage />} />

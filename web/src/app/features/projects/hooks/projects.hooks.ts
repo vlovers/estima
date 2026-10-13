@@ -22,7 +22,7 @@ export const useFetchProject = (
 ) => {
   return useQuery<Project, Error>({
     queryKey: ['project', projectId, sortBy, sortOrder],
-    queryFn: () => fetchProject(projectId!, sortBy, sortOrder, { tree: true }),
+    queryFn: () => fetchProject(projectId!, sortBy, sortOrder),
     enabled: !!projectId,
   });
 };

@@ -1,5 +1,16 @@
-import { IsNumber, IsOptional, IsUUID } from 'class-validator';
+import {
+  IsNumber,
+  IsOptional,
+  IsUUID,
+  IsInt,
+  Min,
+  Max,
+  IsString,
+  IsEnum,
+  IsArray,
+} from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
+import { DeviationReason } from '../entities/estimate-feedback.entity';
 
 export class CreateEstimateFeedbackDto {
   @ApiProperty({
@@ -12,18 +23,56 @@ export class CreateEstimateFeedbackDto {
   @ApiProperty({
     description: 'The actual hours it took to complete the task',
     example: 12.5,
-    required: false,
   })
   @IsNumber()
-  @IsOptional()
-  actualHours?: number;
+  actualHours: number;
 
   @ApiProperty({
-    description: "The developer's manual estimate for the task",
-    example: 10,
+    description: 'Rating of the AI estimate accuracy (1-5)',
+    example: 4,
     required: false,
   })
-  @IsNumber()
+  @IsInt()
+  @Min(1)
+  @Max(5)
   @IsOptional()
-  userEstimate?: number;
+  rating?: number;
+
+  @ApiProperty({
+    description: 'General comment about the task or estimate',
+    example: 'The estimate was good, but I found some undocumented parts.',
+    required: false,
+  })
+  @IsString()
+  @IsOptional()
+  comment?: string;
+
+  @ApiProperty({
+    description: 'The primary reason for any deviation from the estimate',
+    enum: DeviationReason,
+    example: DeviationReason.UNFORESEEN_TECHNICAL_COMPLEXITY,
+    required: false,
+  })
+  @IsEnum(DeviationReason)
+  @IsOptional()
+  reasonForDeviation?: DeviationReason;
+
+  @ApiProperty({
+    description: 'Specific technical comment about the reason for deviation',
+    example: 'The Stripe API for subscriptions was more complex than anticipated.',
+    required: false,
+  })
+  @IsString()
+  @IsOptional()
+  deviationComment?: string;
+
+  @ApiProperty({
+    description: 'Complexity tags that were missed during initial estimation',
+    example: ['legacy_code', 'third_party_integration'],
+    required: false,
+  })
+  @IsArray()
+  @IsString({ each: true })
+  @IsOptional()
+  missedComplexityTags?: string[];
 }

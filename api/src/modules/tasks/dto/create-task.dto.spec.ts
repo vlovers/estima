@@ -18,6 +18,7 @@ function baseValidDto(): any {
   return {
     title: 'Implement login',
     description: 'Add email/password login',
+    projectId: 'f47ac10b-58cc-4372-a567-0e02b2c3d479',
     tags: ['frontend'],
     technology: 'node',
     experienceLevel: 'MIDDLE',

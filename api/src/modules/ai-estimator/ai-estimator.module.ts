@@ -1,17 +1,12 @@
-import { EstimateFeedbackModule } from '../estimate-feedback/estimate-feedback.module';
-import { ProjectsModule } from '../projects/projects.module';
+import { Module } from '@nestjs/common';
 import { AiEstimatorService } from './ai-estimator.service';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { Task } from '../tasks/entities/task.entity';
-import { Module } from '@nestjs/common';
+import { ProjectsModule } from '../projects/projects.module';
+import { CalibrationModule } from '../calibration/calibration.module';
 
 @Module({
-  imports: [
-    EstimateFeedbackModule,
-    TypeOrmModule.forFeature([Task]),
-    ProjectsModule,
-  ],
-  controllers: [],
+  imports: [TypeOrmModule.forFeature([Task]), ProjectsModule, CalibrationModule],
   providers: [AiEstimatorService],
   exports: [AiEstimatorService],
 })

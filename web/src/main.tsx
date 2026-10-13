@@ -20,12 +20,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <Provider store={store}>
       <QueryClientProvider client={queryClient}>
-        <MantineProvider
-          theme={theme}
-          withGlobalStyles
-          withNormalizeCSS
-          defaultColorScheme="auto"
-        >
+        <MantineProvider theme={theme} defaultColorScheme="auto">
           <Notifications position="bottom-right" />
           <BrowserRouter>
             <App />

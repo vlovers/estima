@@ -8,6 +8,7 @@ import { ConfigService } from '@nestjs/config';
 import { Repository } from 'typeorm';
 import { createHash } from 'crypto';
 import OpenAI from 'openai';
+import { CalibrationService } from '../calibration/calibration.service';
 
 export interface Subtask {
   title: string;
@@ -60,7 +61,8 @@ export class AiEstimatorService {
   constructor(
     private readonly configService: ConfigService,
     @InjectRepository(Task)
-    private readonly taskRepository: Repository<Task>
+    private readonly taskRepository: Repository<Task>,
+    private readonly calibrationService: CalibrationService
   ) {
     this.openai = new OpenAI({
       apiKey: this.configService.get<string>('OPENAI_API_KEY'),
@@ -532,105 +534,96 @@ History: ${historyStr}`;
   }
 
   private sanitize(val: number): number {
-    return Math.min(Math.max(0.25, parseFloat(val.toFixed(1))), 200);
+    return Math.round(val * 4) / 4; // round to nearest 0.25
   }
 
-  private async getCorrectedEstimate(
-    original: number,
-    taskDto: CreateTaskDto
-  ): Promise<{ correctedEstimate: number; averageErrorRatio: number }> {
-    const similarTasks = await this.taskRepository
-      .createQueryBuilder('task')
-      .leftJoinAndSelect('task.estimates', 'estimate')
-      .leftJoinAndSelect('task.feedbacks', 'feedback')
-      .where('task.technology LIKE :tech', { tech: `%${taskDto.technology}%` })
-      .andWhere('task.experienceLevel = :exp', { exp: taskDto.experienceLevel })
-      .andWhere('estimate.source = :source', { source: EstimateSource.AI })
-      .andWhere('feedback.actualHours IS NOT NULL')
-      .orderBy('task.createdAt', 'DESC')
-      .limit(50)
-      .getMany();
+  async computeCalibratedEstimate(args: {
+    totalBottomUp: number;
+    subtasksCount: number;
+    taskDto: CreateTaskDto;
+    project: Project;
+    risksCount: number;
+  }): Promise<{
+    p10: number;
+    p50: number;
+    p90: number;
+    confidence: number;
+    explanation: string;
+    logs: string[];
+    topDown: number;
+    bottomUp: number;
+    divergencePct: number;
+  }> {
+    const logs: string[] = [];
+    const model = this.configService.get<string>('OPENAI_MODEL', 'gpt-4o');
 
-    if (similarTasks.length < 3) {
-      // Not enough data for a meaningful correction
-      return { correctedEstimate: original, averageErrorRatio: 0 };
-    }
-
-    // Build semantic texts
-    const targetText = `title: ${taskDto.title}\ntech: ${taskDto.technology}\nexp: ${taskDto.experienceLevel}\n${taskDto.tags?.join(', ') ?? ''}\n${taskDto.description ?? ''}`;
-    const past: {
-      id: string;
-      text: string;
-      ai: number;
-      actual: number;
-    }[] = [];
-    for (const t of similarTasks) {
-      const aiEstimate = t.estimates.find((e) => e.source === EstimateSource.AI);
-      const feedback = t.feedbacks[0];
-      if (!aiEstimate || !feedback) continue;
-      if (!aiEstimate.finalEstimate || aiEstimate.finalEstimate <= 0) continue;
-      if (!feedback.actualHours || feedback.actualHours <= 0) continue;
-      const text = `title: ${t.title}\ntech: ${t.technology}\nexp: ${t.experienceLevel}\n${(t as any).tags?.join(', ') ?? ''}\n${t.description ?? ''}`;
-      past.push({ id: t.id, text, ai: aiEstimate.finalEstimate, actual: feedback.actualHours });
-    }
-
-    if (past.length < 3) {
-      return { correctedEstimate: original, averageErrorRatio: 0 };
-    }
-
-    // Compute embeddings for target + batch of past
-    const embeddings = await this.getEmbeddings([targetText, ...past.map((p) => p.text)]);
-    const targetVec = embeddings[0];
-    const items: { error: number; weight: number; sim: number; id: string }[] = [];
-    for (let i = 0; i < past.length; i++) {
-      const vec = embeddings[i + 1];
-      const sim = Math.max(0, this.cosine(targetVec, vec)); // 0..1
-      // error ratio vs AI estimate
-      const errorRatio = (past[i].actual - past[i].ai) / past[i].ai;
-      // recency by position (already ordered DESC); more recent → higher
-      const recency = 1 - i / Math.max(1, past.length - 1);
-      const weight = 0.7 * sim + 0.3 * recency;
-      items.push({ error: errorRatio, weight, sim, id: past[i].id });
-    }
-
-    if (items.length < 3) {
-      return { correctedEstimate: original, averageErrorRatio: 0 };
-    }
-
-    // Winsorize errors at 10%
-    const errors = items.map((x) => x.error);
-    const [lo, hi] = this.winsorizeBounds(errors, 0.1);
-    const clipped = items.map((x) => ({
-      error: Math.max(lo, Math.min(hi, x.error)),
-      weight: x.weight,
-    }));
-
-    // Keep top-15 by weight to reduce noise
-    clipped.sort((a, b) => b.weight - a.weight);
-    const top = clipped.slice(0, Math.min(15, clipped.length));
-
-    // Optional: log a brief similar-tasks snapshot
-    try {
-      const sample = items
-        .slice()
-        .sort((a, b) => b.weight - a.weight)
-        .slice(0, 3)
-        .map((x) => `${x.id.slice(0, 8)} sim=${x.weight.toFixed(2)}`)
-        .join(', ');
-      if (sample) this.logger.log(`Similar tasks (semantic): ${sample}`);
-    } catch {}
-
-    // Weighted median error
-    const medianError = this.computeWeightedMedian(
-      top.map((x) => x.error),
-      top.map((x) => x.weight)
+    // 1) Top-down estimate with strict retries and fallback
+    const bottomUp = this.sanitize(args.totalBottomUp);
+    const topDown = await this.getTopDownWithRetries(
+      args.taskDto,
+      args.project,
+      model,
+      logs,
+      { matched: false, min: 0, max: 0, priorP50: 0 },
+      bottomUp
     );
+    logs.push(`Top-down: ${topDown.toFixed(1)}h`);
 
-    // Clamp correction strength
-    const boundedMedian = Math.max(-0.6, Math.min(0.6, medianError));
-    const correctedEstimate = original * (1 + boundedMedian);
+    // 2) Bottom-up base
+    logs.push(`Bottom-up: ${bottomUp.toFixed(1)}h`);
 
-    return { correctedEstimate, averageErrorRatio: boundedMedian };
+    // Placeholder for modifier logic until CalibrationService is built
+    const baseHours = bottomUp;
+    const modifier = this.applyModifiers(baseHours, args.taskDto, args.project, logs);
+    const p50 = modifier;
+
+    // Uncertainty coefficient (PR-5)
+    const uncertainty = 0.3;
+
+    return {
+      p10: p50 * (1 - uncertainty),
+      p50: p50,
+      p90: p50 * (1 + uncertainty),
+      confidence: (1 - uncertainty) * 100,
+      explanation: `Derived from ${args.subtasksCount} subtasks (bottom-up) and a top-down cross-check.`,
+      logs,
+      topDown,
+      bottomUp,
+      divergencePct: 0,
+    };
+  }
+
+  private async getTopDownWithRetries(
+    taskDto: CreateTaskDto,
+    project: Project,
+    model: string,
+    logs: string[],
+    priors: { matched: boolean; min: number; max: number; priorP50: number },
+    bottomUp: number
+  ): Promise<number> {
+    // Try normal prompt
+    let prompt = this.buildTopDownPrompt(taskDto, project);
+    let td = this.sanitize(await this.requestEstimateOnly(prompt, model));
+    if (td > 0) return td;
+
+    logs.push('Top-down empty/invalid, retrying (strict #1)');
+    // Strict retry #1
+    prompt = this.buildTopDownPromptStrict(taskDto, project);
+    td = this.sanitize(await this.requestEstimateOnly(prompt, model));
+    if (td > 0) return td;
+
+    logs.push('Top-down still invalid, retrying (strict #2)');
+    // Strict retry #2
+    td = this.sanitize(await this.requestEstimateOnly(prompt, model));
+    if (td > 0) return td;
+
+    // Fallback
+    if (priors.matched && priors.priorP50 > 0) {
+      logs.push(`Top-down fallback → priorP50 ${priors.priorP50.toFixed(1)}h`);
+      return this.sanitize(priors.priorP50);
+    }
+    logs.push(`Top-down fallback → bottom-up ${bottomUp.toFixed(1)}h`);
+    return bottomUp;
   }
 
   private computeSimilarityScore(
@@ -638,27 +631,9 @@ History: ${historyStr}`;
     target: CreateTaskDto,
     targetCategory?: 'fe_small' | 'integration' | 'backend'
   ): number {
-    const pastText = `${pastTask.title ?? ''} ${
-      pastTask.description ?? ''
-    }`.toLowerCase();
+    const pastText = `${pastTask.title ?? ''} ${pastTask.description ?? ''}`.toLowerCase();
     const targetText = `${target.title} ${target.description}`.toLowerCase();
     let score = 0;
-
-    // Archetype match
-    try {
-      const pastPrior = this.getTaskPriors({
-        title: pastTask.title ?? '',
-        description: pastTask.description ?? '',
-        technology: pastTask.technology ?? '',
-        experienceLevel: pastTask.experienceLevel ?? target.experienceLevel,
-      } as any);
-      if (
-        pastPrior.category &&
-        targetCategory &&
-        pastPrior.category === targetCategory
-      )
-        score += 0.4;
-    } catch (_) {}
 
     // Tech keyword overlap
     const techKeywords = [
@@ -762,573 +737,64 @@ Title: ${taskDto.title}
 Description: ${taskDto.description}`;
   }
 
-  private async getTopDownWithRetries(
-    taskDto: CreateTaskDto,
-    project: Project,
-    model: string,
-    logs: string[],
-    priors: { matched: boolean; min: number; max: number; priorP50: number },
-    bottomUp: number
-  ): Promise<number> {
-    // Try normal prompt
-    let prompt = this.buildTopDownPrompt(taskDto, project);
-    let td = this.sanitize(await this.requestEstimateOnly(prompt, model));
-    if (td > 0) return td;
-
-    logs.push('Top-down empty/invalid, retrying (strict #1)');
-    // Strict retry #1
-    prompt = this.buildTopDownPromptStrict(taskDto, project);
-    td = this.sanitize(await this.requestEstimateOnly(prompt, model));
-    if (td > 0) return td;
-
-    logs.push('Top-down still invalid, retrying (strict #2)');
-    // Strict retry #2
-    td = this.sanitize(await this.requestEstimateOnly(prompt, model));
-    if (td > 0) return td;
-
-    // Fallback
-    if (priors.matched && priors.priorP50 > 0) {
-      logs.push(`Top-down fallback → priorP50 ${priors.priorP50.toFixed(1)}h`);
-      return this.sanitize(priors.priorP50);
-    }
-    logs.push(`Top-down fallback → bottom-up ${bottomUp.toFixed(1)}h`);
-    return bottomUp;
-  }
-
-  public async computeCalibratedEstimate(args: {
-    totalBottomUp: number;
-    subtasksCount: number;
-    taskDto: CreateTaskDto;
-    project: Project;
-    risksCount: number;
-  }): Promise<{
-    p10: number;
-    p50: number;
-    p90: number;
-    confidence: number;
-    explanation: string;
-    logs: string[];
-    topDown: number;
-    bottomUp: number;
-    divergencePct: number;
-  }> {
-    const logs: string[] = [];
-    const model = this.configService.get<string>('OPENAI_MODEL', 'gpt-4o');
-
-    // Pre-calc priors for retries/fallback
-    const priors = this.getTaskPriors(args.taskDto);
-
-    // 1) Top-down estimate with strict retries and fallback
-    const bottomUp = this.sanitize(args.totalBottomUp);
-    const topDown = await this.getTopDownWithRetries(
-      args.taskDto,
-      args.project,
-      model,
-      logs,
-      priors,
-      bottomUp
-    );
-    logs.push(`Top-down: ${topDown.toFixed(1)}h`);
-
-    // 2) Bottom-up base
-    logs.push(`Bottom-up: ${bottomUp.toFixed(1)}h`);
-    // 2a) Apply task priors and clamp TD if archetype matched
-    let tdEffective = topDown;
-    if (priors.matched) {
-      const clamped = Math.max(priors.min, Math.min(priors.max, tdEffective));
-      if (clamped !== tdEffective) {
-        logs.push(
-          `Top-down clamped to archetype bounds [${priors.min}-${
-            priors.max
-          }] → ${clamped.toFixed(1)}h`
-        );
-      }
-      // Blend with prior to ground the estimate
-      const preliminaryDiv = (() => {
-        const denom = clamped + bottomUp;
-        return denom > 0 ? (200 * Math.abs(bottomUp - clamped)) / denom : 0;
-      })();
-      const weightPrior = preliminaryDiv > 60 ? 0.85 : 0.7;
-      const blended = this.sanitize(
-        weightPrior * priors.priorP50 + (1 - weightPrior) * clamped
-      );
-      if (Math.abs(blended - clamped) > 0.25) {
-        logs.push(
-          `Top-down blended with prior (w_prior=${weightPrior.toFixed(
-            2
-          )}) → ${blended.toFixed(1)}h (prior ${priors.priorP50.toFixed(1)}h)`
-        );
-      }
-      tdEffective = blended;
-    }
-
-    // 3) Divergence (symmetric): 200 * |TD - BU| / (TD + BU)
-    const denom = tdEffective + bottomUp;
-    const symDivPct =
-      denom > 0 ? (200 * Math.abs(bottomUp - tdEffective)) / denom : 0;
-    logs.push(`Divergence (symmetric): ${symDivPct.toFixed(1)}%`);
-
-    // 4) Apply context modifiers to bottom-up
-    const adjusted = this.applyModifiers(
-      bottomUp,
-      args.taskDto,
-      args.project,
-      logs
-    );
-    const adjustedClamped = this.sanitize(adjusted);
-    logs.push(`Adjusted (context): ${adjustedClamped.toFixed(1)}h`);
-
-    // 5) Historical correction
-    const { correctedEstimate, averageErrorRatio } =
-      await this.getCorrectedEstimate(adjustedClamped, args.taskDto);
-    const correctedClamped = this.sanitize(correctedEstimate);
-    logs.push(
-      `Historical correction (${(averageErrorRatio * 100).toFixed(
-        1
-      )}%): ${correctedClamped.toFixed(1)}h`
-    );
-
-    // 6) Confidence
-    const confidence = this.calculateConfidence({
-      description: args.taskDto.description,
-      divergence: symDivPct / 100, // 0..2
-      historicalError: averageErrorRatio,
-      manualEstimate: args.taskDto.manualEstimate,
-      aiEstimate: correctedClamped,
-    });
-    logs.push(`Confidence: ${(confidence * 100).toFixed(0)}%`);
-
-    // 7) Optional gentle anchoring to manual estimate if present and divergence high
-    let p50 = correctedClamped;
-    if (
-      typeof args.taskDto.manualEstimate === 'number' &&
-      args.taskDto.manualEstimate > 0
-    ) {
-      const manual = this.sanitize(args.taskDto.manualEstimate);
-      const overFactor = p50 / manual;
-      if (overFactor > 3 && symDivPct > 60) {
-        // Pull towards manual by 20% without overfitting
-        const anchored = this.sanitize(0.8 * p50 + 0.2 * manual);
-        logs.push(
-          `Anchored slightly towards manual (${manual}h) → ${anchored.toFixed(
-            1
-          )}h`
-        );
-        p50 = anchored;
-      }
-    }
-
-    // 8) Range (tuned spreads by archetype) + sanity clamps
-    const riskFactor = Math.min(0.2, args.risksCount * 0.05);
-    let baseSpread = 0.22;
-    if (priors.matched && priors.category === 'fe_small') baseSpread = 0.14;
-    else if (priors.matched && priors.category === 'integration')
-      baseSpread = 0.26;
-    else if (priors.matched && priors.category === 'backend') baseSpread = 0.2;
-
-    const confidenceInfluence = (1 - confidence) * 0.1; // up to +10%
-    let spread = Math.min(0.35, baseSpread + riskFactor + confidenceInfluence);
-
-    let p10 = this.sanitize(p50 * (1 - spread));
-    let p90 = this.sanitize(p50 * (1 + spread));
-
-    // Sanity: bound ratios
-    const maxRatio = 1.6;
-    if (p90 / p50 > maxRatio) p90 = this.sanitize(p50 * maxRatio);
-    if (p50 / Math.max(0.25, p10) > maxRatio)
-      p10 = this.sanitize(p50 / maxRatio);
-    logs.push(
-      `Range: p10=${p10.toFixed(1)}h, p50=${p50.toFixed(1)}h, p90=${p90.toFixed(
-        1
-      )}h`
-    );
-
-    const explanation = [
-      `Derived from ${args.subtasksCount} subtasks (bottom-up) and a top-down cross-check.`,
-      `Adjusted for project context (complexity=${args.project.complexity}, overhead=${args.project.overhead}%).`,
-      `Calibrated using recent similar tasks (avg error ${(
-        averageErrorRatio * 100
-      ).toFixed(0)}%).`,
-      priors.matched
-        ? `Applied task prior (p50≈${priors.priorP50.toFixed(1)}h, bounds ${
-            priors.min
-          }-${priors.max}h).`
-        : '',
-      `Divergence (symmetric) ${symDivPct.toFixed(0)}%; confidence ${(
-        confidence * 100
-      ).toFixed(0)}%.`,
-    ].join(' ');
-
-    return {
-      p10,
-      p50,
-      p90,
-      confidence,
-      explanation,
-      logs,
-      topDown: tdEffective,
-      bottomUp,
-      divergencePct: symDivPct,
-    };
-  }
-
   private applyModifiers(
-    original: number,
+    baseHours: number,
     taskDto: CreateTaskDto,
     project: Project,
-    log: string[]
+    logs: string[],
   ): number {
-    let multiplier = 1;
+    let modifier = 1.0;
+    const log = (msg: string) => {
+      this.logger.debug(msg);
+      logs.push(msg);
+    };
 
-    switch (project.complexity) {
-      case 'LOW':
-        multiplier *= 0.85;
-        break;
-      case 'HIGH':
-        multiplier *= 1.2;
-        break;
+    log(`Starting modifier calculation with base modifier: ${modifier.toFixed(3)}`);
+
+    // Experience Level
+    const expKey = `experience.${taskDto.experienceLevel}`;
+    const expCoeff = this.calibrationService.getCoefficient(expKey);
+    if (expCoeff) {
+      modifier *= expCoeff;
+      log(`Applied coefficient for ${expKey}: ${expCoeff.toFixed(3)}x -> new modifier: ${modifier.toFixed(3)}`);
+    } else {
+      // Fallback to old hardcoded values if no coefficient is found
+      if (taskDto.experienceLevel === 'JUNIOR') modifier *= 1.5;
+      if (taskDto.experienceLevel === 'SENIOR') modifier *= 0.75;
     }
 
-    // Normalize experience level to support both 'mid' and 'middle'
-    const exp = String(taskDto.experienceLevel).toLowerCase();
-    switch (exp) {
-      case 'junior':
-        multiplier *= 1.25;
-        break;
-      case 'mid':
-      case 'middle':
-        multiplier *= 0.95; // MIDDLE a bit faster on typical FE tasks
-        break;
-      case 'senior':
-        multiplier *= 0.85;
-        break;
+    // Project Complexity
+    const projComplexityKey = `project.complexity.${project.complexity}`;
+    const projComplexityCoeff = this.calibrationService.getCoefficient(projComplexityKey);
+    if (projComplexityCoeff) {
+      modifier *= projComplexityCoeff;
+      log(`Applied coefficient for ${projComplexityKey}: ${projComplexityCoeff.toFixed(3)}x -> new modifier: ${modifier.toFixed(3)}`);
+    } else {
+      if (project.complexity === 'HIGH') modifier *= 1.2;
+      if (project.complexity === 'LOW') modifier *= 0.9;
     }
 
-    // Frontend stacks often faster to deliver small UI tasks
-    if (/react|next/i.test(taskDto.technology)) multiplier *= 0.92;
-    else if (/nestjs|java|graphql/i.test(taskDto.technology)) multiplier *= 1.1;
-
-    // Structured field-driven coefficients
-    const td: any = taskDto as any;
-
-    // UI design complexity
-    switch (td.uiDesignComplexity) {
-      case 'LOW':
-        multiplier *= 1.05;
-        log.push('UI complexity LOW: x1.05');
-        break;
-      case 'MEDIUM':
-        multiplier *= 1.1;
-        log.push('UI complexity MEDIUM: x1.10');
-        break;
-      case 'HIGH':
-        multiplier *= 1.2;
-        log.push('UI complexity HIGH: x1.20');
-        break;
-    }
-
-    // Data migration complexity
-    if (td.needsDataMigration) {
-      multiplier *= 1.1;
-      log.push('Data migration: base x1.10');
-      switch (td.migrationComplexity) {
-        case 'LOW':
-          multiplier *= 1.05;
-          log.push('Migration LOW: x1.05');
-          break;
-        case 'MEDIUM':
-          multiplier *= 1.1;
-          log.push('Migration MEDIUM: x1.10');
-          break;
-        case 'HIGH':
-          multiplier *= 1.2;
-          log.push('Migration HIGH: x1.20');
-          break;
-      }
-    }
-
-    // Complexity tags
-    const tags: string[] = Array.isArray(td.complexityTags) ? td.complexityTags : [];
-    for (const t of tags) {
-      switch (String(t)) {
-        case 'new_infra':
-          multiplier *= 1.12;
-          log.push('Tag new_infra: x1.12');
-          break;
-        case 'legacy_code':
-          multiplier *= 1.2;
-          log.push('Tag legacy_code: x1.20');
-          break;
-        case 'refactor':
-          multiplier *= 1.08;
-          log.push('Tag refactor: x1.08');
-          break;
-        case 'migration':
-          multiplier *= 1.12;
-          log.push('Tag migration: x1.12');
-          break;
-        case 'third_party_integration':
-          multiplier *= 1.15;
-          log.push('Tag third_party_integration: x1.15');
-          break;
-        case 'concurrency':
-          multiplier *= 1.2;
-          log.push('Tag concurrency: x1.20');
-          break;
-        case 'data_modeling':
-          multiplier *= 1.12;
-          log.push('Tag data_modeling: x1.12');
-          break;
-        case 'ai_integration':
-          multiplier *= 1.12;
-          log.push('Tag ai_integration: x1.12');
-          break;
-        case 'security_hardening':
-          multiplier *= 1.15;
-          log.push('Tag security_hardening: x1.15');
-          break;
-        case 'performance_critical':
-          multiplier *= 1.15;
-          log.push('Tag performance_critical: x1.15');
-          break;
-      }
-    }
-
-    // Testing
-    if (td.testing) {
-      const t = td.testing || {};
-      if (t.integration) {
-        multiplier *= 1.1;
-        log.push('Testing integration: x1.10');
-      }
-      if (t.e2e) {
-        multiplier *= 1.12;
-        log.push('Testing e2e: x1.12');
-      }
-      if (t.performance) {
-        multiplier *= 1.08;
-        log.push('Testing performance: x1.08');
-      }
-      if (t.security) {
-        multiplier *= 1.1;
-        log.push('Testing security: x1.10');
-      }
-      if (typeof t.unitCoverageTarget === 'number') {
-        const frac = Math.max(0, Math.min(1, t.unitCoverageTarget / 100));
-        const covMult = 1 + 0.1 * frac; // up to +10%
-        multiplier *= covMult;
-        log.push(`Unit coverage target ${t.unitCoverageTarget}%: x${covMult.toFixed(2)}`);
-      }
-    }
-
-    // Documentation
-    if (td.documentation) {
-      const d = td.documentation || {};
-      if (d.userDocs) {
-        multiplier *= 1.05;
-        log.push('Docs userDocs: x1.05');
-      }
-      if (d.apiDocs) {
-        multiplier *= 1.07;
-        log.push('Docs apiDocs: x1.07');
-      }
-      if (d.readme) {
-        multiplier *= 1.03;
-        log.push('Docs readme: x1.03');
-      }
-      if (d.changelog) {
-        multiplier *= 1.02;
-        log.push('Docs changelog: x1.02');
-      }
-    }
-
-    // Integrations
-    if (Array.isArray(td.integrations) && td.integrations.length) {
-      for (const integ of td.integrations) {
-        let m = 1.02; // base overhead per integration
-        const interaction = String(integ.interaction || '').toLowerCase();
-        if (interaction === 'write') m *= 1.04;
-        else if (interaction === 'read_write') m *= 1.06;
-
-        const auth = String(integ.auth || '').toLowerCase();
-        if (auth === 'api_key') m *= 1.02;
-        else if (auth === 'oauth') m *= 1.04;
-        else if (auth === 'saml') m *= 1.05;
-        else if (auth === 'basic') m *= 1.01;
-
-        multiplier *= m;
-        log.push(`Integration ${integ.name || ''} (${interaction}${auth ? ", auth=" + auth : ''}): x${m.toFixed(2)}`);
-      }
-    }
-
-    // Non-functional requirements
-    if (Array.isArray(td.nfrs)) {
-      for (const n of td.nfrs) {
-        const cat = String(n?.category || '').toLowerCase();
-        switch (cat) {
-          case 'performance':
-            multiplier *= 1.1;
-            log.push('NFR performance: x1.10');
-            break;
-          case 'security':
-            multiplier *= 1.12;
-            log.push('NFR security: x1.12');
-            break;
-          case 'reliability':
-            multiplier *= 1.08;
-            log.push('NFR reliability: x1.08');
-            break;
-          case 'scalability':
-            multiplier *= 1.1;
-            log.push('NFR scalability: x1.10');
-            break;
-          case 'usability':
-            multiplier *= 1.05;
-            log.push('NFR usability: x1.05');
-            break;
-          case 'observability':
-            multiplier *= 1.06;
-            log.push('NFR observability: x1.06');
-            break;
-          case 'compliance':
-            multiplier *= 1.12;
-            log.push('NFR compliance: x1.12');
-            break;
-          case 'maintainability':
-            multiplier *= 1.04;
-            log.push('NFR maintainability: x1.04');
-            break;
-          case 'cost':
-            // cost constraint can reduce scope
-            multiplier *= 0.98;
-            log.push('NFR cost: x0.98');
-            break;
+    // Complexity Tags
+    if (taskDto.complexityTags && taskDto.complexityTags.length > 0) {
+      taskDto.complexityTags.forEach(tag => {
+        const tagKey = `complexity.${tag}`;
+        const tagCoeff = this.calibrationService.getCoefficient(tagKey);
+        if (tagCoeff) {
+          modifier *= tagCoeff;
+          log(`Applied coefficient for tag ${tagKey}: ${tagCoeff.toFixed(3)}x -> new modifier: ${modifier.toFixed(3)}`);
+        } else {
+            log(`No coefficient found for tag ${tagKey}, skipping.`);
         }
-      }
+      });
     }
 
-    // Clamp multiplier to avoid extremes
-    multiplier = Math.max(0.5, Math.min(3, multiplier));
+    // Project Overhead
+    const overheadModifier = 1 + project.overhead / 100;
+    modifier *= overheadModifier;
+    log(`Applied project overhead: ${overheadModifier.toFixed(3)}x -> new modifier: ${modifier.toFixed(3)}`);
 
-    const adjusted = original * multiplier;
-    log.push(`Modifier x${multiplier.toFixed(2)} → ${adjusted.toFixed(1)}h`);
-
-    if (project.overhead > 0) {
-      const withOverhead = adjusted * (1 + project.overhead / 100);
-      log.push(`Overhead +${project.overhead}% → ${withOverhead.toFixed(1)}h`);
-      return withOverhead;
-    }
-
-    return adjusted;
-  }
-
-  // Very simple heuristic priors for common scopes to prevent extreme TD values
-  private getTaskPriors(taskDto: CreateTaskDto): {
-    matched: boolean;
-    min: number;
-    max: number;
-    priorP50: number;
-    category?: 'fe_small' | 'integration' | 'backend';
-  } {
-    const text = `${taskDto.title} ${taskDto.description}`.toLowerCase();
-    const tech = taskDto.technology.toLowerCase();
-
-    // FE: Responsive marketing landing page (React)
-    if (/landing\s*page|\blanding\b/.test(text) && /react|next/.test(tech)) {
-      let mid = 16;
-      if (/animation|animated|gsap|lottie/.test(text)) mid += 4;
-      if (/seo|search engine|meta/.test(text)) mid += 4;
-      const min = Math.max(6, mid * 0.6);
-      const max = Math.min(40, mid * 1.6);
-      return { matched: true, min, max, priorP50: mid, category: 'fe_small' };
-    }
-
-    // FE: Simple form/CRUD page (React/Vue/Angular)
-    if (
-      /form|crud|create|edit|delete|submit/.test(text) &&
-      /react|next|vue|nuxt|angular/.test(tech)
-    ) {
-      let mid = 12; // includes basic validation and API wiring
-      if (/validation|yup|zod|complex/.test(text)) mid += 4;
-      const min = Math.max(5, mid * 0.6);
-      const max = Math.min(36, mid * 1.7);
-      return { matched: true, min, max, priorP50: mid, category: 'fe_small' };
-    }
-
-    // FE: Table with filters/sorting/pagination
-    if (
-      /table|grid/.test(text) &&
-      /filter|sort|pagination|infinite/.test(text)
-    ) {
-      let mid = 18;
-      if (/server[- ]?side|virtual/.test(text)) mid += 6;
-      const min = Math.max(8, mid * 0.6);
-      const max = Math.min(48, mid * 1.7);
-      return { matched: true, min, max, priorP50: mid, category: 'fe_small' };
-    }
-
-    // FE: Auth (login/reset/2FA)
-    if (/auth|login|sign[- ]?in|reset|2fa|otp/.test(text)) {
-      let mid = 14;
-      if (/2fa|otp/.test(text)) mid += 4;
-      const min = Math.max(6, mid * 0.6);
-      const max = Math.min(40, mid * 1.7);
-      return { matched: true, min, max, priorP50: mid, category: 'fe_small' };
-    }
-
-    // FE: i18n
-    if (/i18n|internationalization|localization|translate/.test(text)) {
-      const mid = 10;
-      const min = 5;
-      const max = 28;
-      return { matched: true, min, max, priorP50: mid, category: 'fe_small' };
-    }
-
-    // FE: SSR/Next.js page
-    if (/ssr|server[- ]side rendering/.test(text) && /next/.test(tech)) {
-      const mid = 16;
-      const min = 7;
-      const max = 42;
-      return { matched: true, min, max, priorP50: mid, category: 'fe_small' };
-    }
-
-    // BE: REST CRUD (Node/Nest, Django, Spring)
-    if (
-      /crud|endpoint|rest/.test(text) &&
-      /nest|express|django|spring|fastapi/.test(tech)
-    ) {
-      let mid = 18;
-      if (/auth|rbac|permissions/.test(text)) mid += 6;
-      const min = Math.max(8, mid * 0.6);
-      const max = Math.min(60, mid * 1.8);
-      return { matched: true, min, max, priorP50: mid, category: 'backend' };
-    }
-
-    // BE: External API integration
-    if (/integrat|external api|third[- ]party|webhook/.test(text)) {
-      let mid = 20;
-      if (/oauth|signature|retry|rate[- ]?limit/.test(text)) mid += 6;
-      const min = Math.max(8, mid * 0.6);
-      const max = Math.min(72, mid * 1.8);
-      return {
-        matched: true,
-        min,
-        max,
-        priorP50: mid,
-        category: 'integration',
-      };
-    }
-
-    // Infra-ish: cache/queue wiring
-    if (/cache|redis|queue|sqs|rabbit|kafka/.test(text)) {
-      const mid = 14;
-      const min = 6;
-      const max = 40;
-      return { matched: true, min, max, priorP50: mid, category: 'backend' };
-    }
-
-    // Default: no match
-    return { matched: false, min: 0, max: 0, priorP50: 0 };
+    log(`Final modifier: ${modifier.toFixed(3)}`);
+    return baseHours * modifier;
   }
 
   private calculateConfidence(args: {
@@ -1422,7 +888,6 @@ Description: ${taskDto.description}`;
     };
   }
 
-  // Wrapper to use response_format with JSON schema when supported; otherwise retry without it
   private async chatWithOptionalSchema(
     model: string,
     messages: { role: 'user' | 'system' | 'assistant'; content: string }[],

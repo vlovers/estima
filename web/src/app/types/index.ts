@@ -15,6 +15,7 @@ export interface Estimate {
   confidence: number | null;
   explanation: string | null;
   finalEstimate: number;
+  manualEstimate?: number | null;
   source: 'ai' | 'manual' | 'ai_subtask_sum' | 'final';
   id: string;
   // Structured fields from backend (optional)
@@ -39,18 +40,36 @@ export interface Clarification {
 
 export interface Task {
   feedbacks: EstimateFeedback[];
-  experienceLevel: string;
+  experienceLevel: 'JUNIOR' | 'MIDDLE' | 'SENIOR';
   estimates: Estimate[];
   technology: string;
   description: string;
   children?: Task[];
+  subtasks?: Task[];
   tags: string[];
   title: string;
   id: string;
+  projectId?: string;
   riskAnalysis?: { risk: string; mitigation: string }[];
   // Align with backend enum values (lowercase strings)
   status: 'estimated' | 'pending_clarification';
   clarificationHistory?: Clarification[];
+  manualEstimate?: number;
+  useAiEstimate?: boolean;
+  breakdown?: boolean;
+  acceptanceCriteria?: string[];
+  assumptions?: string[];
+  constraints?: string[];
+  nfrs?: NfrDto[];
+  integrations?: IntegrationDto[];
+  testing?: TestingDto;
+  documentation?: DocumentationDto;
+  complexityTags?: ComplexityTag[];
+  uiDesignComplexity?: UiDesignComplexity;
+  needsDataMigration?: boolean;
+  migrationComplexity?: MigrationComplexity;
+  generateManagerNote?: boolean;
+  generateRiskAnalysis?: boolean;
 }
 
 export interface Project {
@@ -109,17 +128,19 @@ export interface DocumentationDto {
 
 export type UiDesignComplexity = 'NONE' | 'LOW' | 'MEDIUM' | 'HIGH';
 export type MigrationComplexity = 'LOW' | 'MEDIUM' | 'HIGH';
-export type ComplexityTag =
-  | 'new_infra'
-  | 'legacy_code'
-  | 'refactor'
-  | 'migration'
-  | 'third_party_integration'
-  | 'concurrency'
-  | 'data_modeling'
-  | 'ai_integration'
-  | 'security_hardening'
-  | 'performance_critical';
+
+export enum ComplexityTag {
+  NEW_INFRA = 'new_infra',
+  LEGACY_CODE = 'legacy_code',
+  REFACTOR = 'refactor',
+  MIGRATION = 'migration',
+  THIRD_PARTY_INTEGRATION = 'third_party_integration',
+  CONCURRENCY = 'concurrency',
+  DATA_MODELING = 'data_modeling',
+  AI_INTEGRATION = 'ai_integration',
+  SECURITY_HARDENING = 'security_hardening',
+  PERFORMANCE_CRITICAL = 'performance_critical',
+}
 
 export interface CreateTaskDto {
   experienceLevel: 'JUNIOR' | 'MIDDLE' | 'SENIOR';
@@ -149,14 +170,51 @@ export interface CreateTaskDto {
 }
 
 export interface UpdateTaskDto {
+  id?: string;
   experienceLevel?: 'JUNIOR' | 'MIDDLE' | 'SENIOR';
+  manualEstimate?: number;
+  useAiEstimate?: boolean;
+  breakdown?: boolean;
   technology?: string;
   description?: string;
   tags?: string[];
   title?: string;
+  acceptanceCriteria?: string[];
+  assumptions?: string[];
+  constraints?: string[];
+  nfrs?: NfrDto[];
+  integrations?: IntegrationDto[];
+  testing?: TestingDto;
+  documentation?: DocumentationDto;
+  complexityTags?: ComplexityTag[];
+  uiDesignComplexity?: UiDesignComplexity;
+  needsDataMigration?: boolean;
+  migrationComplexity?: MigrationComplexity;
+  generateManagerNote?: boolean;
+  generateRiskAnalysis?: boolean;
+}
+
+export interface CreateManualEstimateDto {
+  taskId: string;
+  hours: number;
+}
+
+export enum DeviationReason {
+  UNFORESEEN_TECHNICAL_COMPLEXITY = 'UNFORESEEN_TECHNICAL_COMPLEXITY',
+  SCOPE_CREEP = 'SCOPE_CREEP',
+  INCORRECT_INITIAL_ASSUMPTIONS = 'INCORRECT_INITIAL_ASSUMPTIONS',
+  ENVIRONMENT_OR_TOOLING_ISSUES = 'ENVIRONMENT_OR_TOOLING_ISSUES',
+  EXTERNAL_DEPENDENCY_DELAY = 'EXTERNAL_DEPENDENCY_DELAY',
+  ESTIMATE_WAS_ACCURATE = 'ESTIMATE_WAS_ACCURATE',
+  OTHER = 'OTHER',
 }
 
 export interface CreateFeedbackDto {
   actualHours: number;
   taskId: string;
+  rating?: number;
+  comment?: string;
+  reasonForDeviation?: DeviationReason;
+  deviationComment?: string;
+  missedComplexityTags?: string[];
 }
