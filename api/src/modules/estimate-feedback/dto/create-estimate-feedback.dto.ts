@@ -5,6 +5,7 @@ import {
   IsInt,
   Min,
   Max,
+  MaxLength,
   IsString,
   IsEnum,
   IsArray,
@@ -19,6 +20,26 @@ export class CreateEstimateFeedbackDto {
   })
   @IsUUID()
   taskId: string;
+
+  @ApiProperty({
+    description: 'Optional FINAL estimate ID this feedback is evaluating',
+    example: 'f47ac10b-58cc-4372-a567-0e02b2c3d479',
+    required: false,
+  })
+  @IsUUID()
+  @IsOptional()
+  estimateId?: string;
+
+  @ApiProperty({
+    description:
+      'Optional client-supplied idempotency key for this task feedback',
+    example: 'task-feedback-2026-10-14',
+    required: false,
+  })
+  @IsString()
+  @MaxLength(128)
+  @IsOptional()
+  idempotencyKey?: string;
 
   @ApiProperty({
     description: 'The actual hours it took to complete the task',
@@ -59,7 +80,8 @@ export class CreateEstimateFeedbackDto {
 
   @ApiProperty({
     description: 'Specific technical comment about the reason for deviation',
-    example: 'The Stripe API for subscriptions was more complex than anticipated.',
+    example:
+      'The Stripe API for subscriptions was more complex than anticipated.',
     required: false,
   })
   @IsString()

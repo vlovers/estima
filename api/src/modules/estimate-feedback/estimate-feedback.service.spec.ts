@@ -1,8 +1,11 @@
-import { NotFoundException } from '@nestjs/common';
+import { ConflictException, NotFoundException } from '@nestjs/common';
 import { Repository } from 'typeorm';
 import { EstimateFeedback } from './entities/estimate-feedback.entity';
 import { EstimateFeedbackService } from './estimate-feedback.service';
-import { FeedbackAnalysisService } from './feedback-analysis.service';
+import {
+  Estimate,
+  EstimateSource,
+} from '../estimates/entities/estimate.entity';
 import { Task } from '../tasks/entities/task.entity';
 
 const buildQueryBuilder = (result: {
@@ -10,9 +13,11 @@ const buildQueryBuilder = (result: {
   getMany?: unknown[];
 }) => ({
   innerJoinAndSelect: jest.fn().mockReturnThis(),
+  leftJoinAndSelect: jest.fn().mockReturnThis(),
   innerJoin: jest.fn().mockReturnThis(),
   where: jest.fn().mockReturnThis(),
   andWhere: jest.fn().mockReturnThis(),
+  orderBy: jest.fn().mockReturnThis(),
   getOne: jest.fn().mockResolvedValue(result.getOne ?? null),
   getMany: jest.fn().mockResolvedValue(result.getMany ?? []),
 });
@@ -20,9 +25,16 @@ const buildQueryBuilder = (result: {
 describe('EstimateFeedbackService tenant isolation', () => {
   let feedbackRepository: jest.Mocked<Repository<EstimateFeedback>>;
   let taskRepository: jest.Mocked<Repository<Task>>;
-  let feedbackAnalysisService: jest.Mocked<FeedbackAnalysisService>;
+  let estimateRepository: jest.Mocked<Repository<Estimate>>;
 
-  const buildService = (taskOwnerMatch = true) => {
+  const buildService = (
+    taskOwnerMatch = true,
+    estimate: Estimate | null = {
+      id: 'estimate-final',
+      finalEstimate: 12,
+      source: EstimateSource.FINAL,
+    } as Estimate
+  ) => {
     const taskQb = buildQueryBuilder({
       getOne: taskOwnerMatch ? ({ id: 'task-a' } as Task) : null,
     });
@@ -33,7 +45,7 @@ describe('EstimateFeedbackService tenant isolation', () => {
     feedbackRepository = {
       create: jest.fn((value) => value as EstimateFeedback),
       save: jest.fn(
-        async (value) => ({ id: 'feedback-a', ...value }) as EstimateFeedback
+        async (value) => ({ id: 'feedback-a', ...value } as EstimateFeedback)
       ),
       createQueryBuilder: jest.fn(() => feedbackQb as any),
     } as unknown as jest.Mocked<Repository<EstimateFeedback>>;
@@ -42,16 +54,20 @@ describe('EstimateFeedbackService tenant isolation', () => {
       createQueryBuilder: jest.fn(() => taskQb as any),
     } as unknown as jest.Mocked<Repository<Task>>;
 
-    feedbackAnalysisService = {
-      analyzeFeedback: jest.fn(async () => undefined),
-    } as unknown as jest.Mocked<FeedbackAnalysisService>;
+    const estimateQb = buildQueryBuilder({
+      getOne: estimate,
+    });
+    estimateRepository = {
+      createQueryBuilder: jest.fn(() => estimateQb as any),
+    } as unknown as jest.Mocked<Repository<Estimate>>;
 
     return {
+      estimateQb,
       feedbackQb,
       service: new EstimateFeedbackService(
         feedbackRepository,
         taskRepository,
-        feedbackAnalysisService
+        estimateRepository
       ),
       taskQb,
     };
@@ -62,15 +78,19 @@ describe('EstimateFeedbackService tenant isolation', () => {
 
     await service.create({ taskId: 'task-a', actualHours: 10 }, 'user-a');
 
-    expect(taskQb.andWhere).toHaveBeenCalledWith(
-      'project."userId" = :userId',
-      { userId: 'user-a' }
-    );
+    expect(taskQb.andWhere).toHaveBeenCalledWith('project."userId" = :userId', {
+      userId: 'user-a',
+    });
     expect(feedbackRepository.save).toHaveBeenCalled();
-    expect(feedbackAnalysisService.analyzeFeedback).toHaveBeenCalled();
+    expect(feedbackRepository.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        estimateId: 'estimate-final',
+        estimatedHoursSnapshot: 12,
+      })
+    );
   });
 
-  it('does not save feedback or trigger calibration for another user task', async () => {
+  it('does not save feedback for another user task', async () => {
     const { service } = buildService(false);
 
     await expect(
@@ -78,7 +98,6 @@ describe('EstimateFeedbackService tenant isolation', () => {
     ).rejects.toBeInstanceOf(NotFoundException);
 
     expect(feedbackRepository.save).not.toHaveBeenCalled();
-    expect(feedbackAnalysisService.analyzeFeedback).not.toHaveBeenCalled();
   });
 
   it('scopes feedback list queries by project owner', async () => {
@@ -90,5 +109,64 @@ describe('EstimateFeedbackService tenant isolation', () => {
       'project."userId" = :userId',
       { userId: 'user-a' }
     );
+  });
+
+  it('returns existing feedback for identical idempotency payload', async () => {
+    const { service } = buildService(true);
+    const existing = {
+      id: 'feedback-existing',
+      taskId: 'task-a',
+      estimateId: 'estimate-final',
+      actualHours: 10,
+      rating: 4,
+      comment: 'same',
+      missedComplexityTags: ['legacy_code'],
+    } as EstimateFeedback;
+    (feedbackRepository.createQueryBuilder as jest.Mock).mockReturnValueOnce(
+      buildQueryBuilder({ getOne: existing }) as any
+    );
+
+    await expect(
+      service.create(
+        {
+          taskId: 'task-a',
+          estimateId: 'estimate-final',
+          idempotencyKey: 'idem-1',
+          actualHours: 10,
+          rating: 4,
+          comment: 'same',
+          missedComplexityTags: ['legacy_code'],
+        },
+        'user-a'
+      )
+    ).resolves.toBe(existing);
+    expect(feedbackRepository.save).not.toHaveBeenCalled();
+  });
+
+  it('rejects conflicting idempotency payloads', async () => {
+    const { service } = buildService(true);
+    (feedbackRepository.createQueryBuilder as jest.Mock).mockReturnValueOnce(
+      buildQueryBuilder({
+        getOne: {
+          id: 'feedback-existing',
+          taskId: 'task-a',
+          estimateId: 'estimate-final',
+          actualHours: 10,
+        } as EstimateFeedback,
+      }) as any
+    );
+
+    await expect(
+      service.create(
+        {
+          taskId: 'task-a',
+          estimateId: 'estimate-final',
+          idempotencyKey: 'idem-1',
+          actualHours: 11,
+        },
+        'user-a'
+      )
+    ).rejects.toBeInstanceOf(ConflictException);
+    expect(feedbackRepository.save).not.toHaveBeenCalled();
   });
 });

@@ -70,7 +70,9 @@ export class AiEstimatorService {
   }
 
   private hashText(text: string): string {
-    return createHash('sha256').update(text || '').digest('hex');
+    return createHash('sha256')
+      .update(text || '')
+      .digest('hex');
   }
 
   private cosine(a: number[], b: number[]): number {
@@ -161,27 +163,37 @@ export class AiEstimatorService {
                 auth: i.auth != null ? String(i.auth) : undefined,
                 sandbox: Boolean(i.sandbox ?? false),
               }))
-              .sort((a: any, b: any) => (a.name + a.interaction).localeCompare(b.name + b.interaction))
+              .sort((a: any, b: any) =>
+                (a.name + a.interaction).localeCompare(b.name + b.interaction)
+              )
           : [],
         testing: (taskDto as any).testing
           ? {
               unit: Boolean((taskDto as any).testing.unit ?? true),
-              integration: Boolean((taskDto as any).testing.integration ?? false),
+              integration: Boolean(
+                (taskDto as any).testing.integration ?? false
+              ),
               e2e: Boolean((taskDto as any).testing.e2e ?? false),
               unitCoverageTarget:
                 typeof (taskDto as any).testing.unitCoverageTarget === 'number'
                   ? (taskDto as any).testing.unitCoverageTarget
                   : undefined,
-              performance: Boolean((taskDto as any).testing.performance ?? false),
+              performance: Boolean(
+                (taskDto as any).testing.performance ?? false
+              ),
               security: Boolean((taskDto as any).testing.security ?? false),
             }
           : null,
         documentation: (taskDto as any).documentation
           ? {
-              userDocs: Boolean((taskDto as any).documentation.userDocs ?? false),
+              userDocs: Boolean(
+                (taskDto as any).documentation.userDocs ?? false
+              ),
               apiDocs: Boolean((taskDto as any).documentation.apiDocs ?? false),
               readme: Boolean((taskDto as any).documentation.readme ?? false),
-              changelog: Boolean((taskDto as any).documentation.changelog ?? false),
+              changelog: Boolean(
+                (taskDto as any).documentation.changelog ?? false
+              ),
             }
           : null,
         complexityTags: ((taskDto as any).complexityTags || [])
@@ -189,7 +201,9 @@ export class AiEstimatorService {
           .map((x: any) => String(x))
           .sort(),
         uiDesignComplexity: (taskDto as any).uiDesignComplexity ?? null,
-        needsDataMigration: Boolean((taskDto as any).needsDataMigration ?? false),
+        needsDataMigration: Boolean(
+          (taskDto as any).needsDataMigration ?? false
+        ),
         migrationComplexity: (taskDto as any).migrationComplexity ?? null,
       },
       project: {
@@ -349,14 +363,21 @@ History: ${historyStr}`;
       const fresh = Date.now() - cached.createdAt < this.cacheTtlMs;
       const sameVersion = cached.version === this.pipelineVersion;
       if (fresh && sameVersion) {
-        this.logger.log(`Cache hit for analysis ${inputHash.slice(0, 8)} (v${cached.version})`);
+        this.logger.log(
+          `Cache hit for analysis ${inputHash.slice(0, 8)} (v${cached.version})`
+        );
         return cached.result;
       }
       this.logger.log(
-        `Cache stale/mismatch for ${inputHash.slice(0, 8)} (fresh=${fresh}, versionOk=${sameVersion}); recomputing.`
+        `Cache stale/mismatch for ${inputHash.slice(
+          0,
+          8
+        )} (fresh=${fresh}, versionOk=${sameVersion}); recomputing.`
       );
     } else {
-      this.logger.log(`Cache miss for analysis ${inputHash.slice(0, 8)}; computing.`);
+      this.logger.log(
+        `Cache miss for analysis ${inputHash.slice(0, 8)}; computing.`
+      );
     }
 
     // 0) Run spec quality assessment to decide whether to ask questions first
@@ -367,7 +388,11 @@ History: ${historyStr}`;
       specQuality = await this.assessSpecQuality(taskDto, project, history);
       // Structured log for spec quality
       this.logger.log(
-        `SpecQuality: score=${specQuality.score?.toFixed?.(2) ?? 'n/a'}; missing=${(specQuality.missing || []).join(', ')}; reasons=${(specQuality.reasons || []).join(' | ')}`
+        `SpecQuality: score=${
+          specQuality.score?.toFixed?.(2) ?? 'n/a'
+        }; missing=${(specQuality.missing || []).join(', ')}; reasons=${(
+          specQuality.reasons || []
+        ).join(' | ')}`
       );
     } catch (e) {
       this.logger.warn(`Spec quality assessment failed, falling back. ${e}`);
@@ -388,7 +413,9 @@ History: ${historyStr}`;
 
     if (needsQuestions) {
       const reason = specQuality
-        ? `Clarification gate triggered (score=${specQuality.score.toFixed(2)}, missing=${(specQuality.missing || []).length})`
+        ? `Clarification gate triggered (score=${specQuality.score.toFixed(
+            2
+          )}, missing=${(specQuality.missing || []).length})`
         : `Clarification gate triggered via fallback heuristic (descLen=${descLen})`;
       this.logger.log(reason);
     }
@@ -441,7 +468,10 @@ History: ${historyStr}`;
         Array.isArray(parsed.questions) &&
         parsed.questions.length > 0
       ) {
-        const result = { type: 'questions', data: parsed as AiQuestionsResponse } as AiAnalysisResult;
+        const result = {
+          type: 'questions',
+          data: parsed as AiQuestionsResponse,
+        } as AiAnalysisResult;
         this.analysisCache.set(inputHash, {
           createdAt: Date.now(),
           version: this.pipelineVersion,
@@ -456,7 +486,10 @@ History: ${historyStr}`;
         Array.isArray(parsed.subtasks) &&
         parsed.subtasks.length > 0
       ) {
-        const result = { type: 'estimate', data: parsed as AiEstimateResponse } as AiAnalysisResult;
+        const result = {
+          type: 'estimate',
+          data: parsed as AiEstimateResponse,
+        } as AiAnalysisResult;
         this.analysisCache.set(inputHash, {
           createdAt: Date.now(),
           version: this.pipelineVersion,
@@ -574,7 +607,12 @@ History: ${historyStr}`;
 
     // Placeholder for modifier logic until CalibrationService is built
     const baseHours = bottomUp;
-    const modifier = this.applyModifiers(baseHours, args.taskDto, args.project, logs);
+    const modifier = await this.applyModifiers(
+      baseHours,
+      args.taskDto,
+      args.project,
+      logs
+    );
     const p50 = modifier;
 
     // Uncertainty coefficient (PR-5)
@@ -631,7 +669,9 @@ History: ${historyStr}`;
     target: CreateTaskDto,
     targetCategory?: 'fe_small' | 'integration' | 'backend'
   ): number {
-    const pastText = `${pastTask.title ?? ''} ${pastTask.description ?? ''}`.toLowerCase();
+    const pastText = `${pastTask.title ?? ''} ${
+      pastTask.description ?? ''
+    }`.toLowerCase();
     const targetText = `${target.title} ${target.description}`.toLowerCase();
     let score = 0;
 
@@ -737,26 +777,45 @@ Title: ${taskDto.title}
 Description: ${taskDto.description}`;
   }
 
-  private applyModifiers(
+  private async applyModifiers(
     baseHours: number,
     taskDto: CreateTaskDto,
     project: Project,
-    logs: string[],
-  ): number {
+    logs: string[]
+  ): Promise<number> {
     let modifier = 1.0;
     const log = (msg: string) => {
       this.logger.debug(msg);
       logs.push(msg);
     };
 
-    log(`Starting modifier calculation with base modifier: ${modifier.toFixed(3)}`);
+    log(
+      `Starting modifier calculation with base modifier: ${modifier.toFixed(3)}`
+    );
+
+    const coefficientKeys = [
+      `experience.${taskDto.experienceLevel}`,
+      `project.complexity.${project.complexity}`,
+      ...((taskDto.complexityTags || []) as string[]).map(
+        (tag) => `complexity.${tag}`
+      ),
+    ];
+    const effectiveCoefficients =
+      await this.calibrationService.getEffectiveCoefficients(
+        coefficientKeys,
+        project.userId
+      );
 
     // Experience Level
     const expKey = `experience.${taskDto.experienceLevel}`;
-    const expCoeff = this.calibrationService.getCoefficient(expKey);
+    const expCoeff = effectiveCoefficients.get(expKey);
     if (expCoeff) {
       modifier *= expCoeff;
-      log(`Applied coefficient for ${expKey}: ${expCoeff.toFixed(3)}x -> new modifier: ${modifier.toFixed(3)}`);
+      log(
+        `Applied coefficient for ${expKey}: ${expCoeff.toFixed(
+          3
+        )}x -> new modifier: ${modifier.toFixed(3)}`
+      );
     } else {
       // Fallback to old hardcoded values if no coefficient is found
       if (taskDto.experienceLevel === 'JUNIOR') modifier *= 1.5;
@@ -765,10 +824,14 @@ Description: ${taskDto.description}`;
 
     // Project Complexity
     const projComplexityKey = `project.complexity.${project.complexity}`;
-    const projComplexityCoeff = this.calibrationService.getCoefficient(projComplexityKey);
+    const projComplexityCoeff = effectiveCoefficients.get(projComplexityKey);
     if (projComplexityCoeff) {
       modifier *= projComplexityCoeff;
-      log(`Applied coefficient for ${projComplexityKey}: ${projComplexityCoeff.toFixed(3)}x -> new modifier: ${modifier.toFixed(3)}`);
+      log(
+        `Applied coefficient for ${projComplexityKey}: ${projComplexityCoeff.toFixed(
+          3
+        )}x -> new modifier: ${modifier.toFixed(3)}`
+      );
     } else {
       if (project.complexity === 'HIGH') modifier *= 1.2;
       if (project.complexity === 'LOW') modifier *= 0.9;
@@ -776,14 +839,18 @@ Description: ${taskDto.description}`;
 
     // Complexity Tags
     if (taskDto.complexityTags && taskDto.complexityTags.length > 0) {
-      taskDto.complexityTags.forEach(tag => {
+      taskDto.complexityTags.forEach((tag) => {
         const tagKey = `complexity.${tag}`;
-        const tagCoeff = this.calibrationService.getCoefficient(tagKey);
+        const tagCoeff = effectiveCoefficients.get(tagKey);
         if (tagCoeff) {
           modifier *= tagCoeff;
-          log(`Applied coefficient for tag ${tagKey}: ${tagCoeff.toFixed(3)}x -> new modifier: ${modifier.toFixed(3)}`);
+          log(
+            `Applied coefficient for tag ${tagKey}: ${tagCoeff.toFixed(
+              3
+            )}x -> new modifier: ${modifier.toFixed(3)}`
+          );
         } else {
-            log(`No coefficient found for tag ${tagKey}, skipping.`);
+          log(`No coefficient found for tag ${tagKey}, skipping.`);
         }
       });
     }
@@ -791,7 +858,11 @@ Description: ${taskDto.description}`;
     // Project Overhead
     const overheadModifier = 1 + project.overhead / 100;
     modifier *= overheadModifier;
-    log(`Applied project overhead: ${overheadModifier.toFixed(3)}x -> new modifier: ${modifier.toFixed(3)}`);
+    log(
+      `Applied project overhead: ${overheadModifier.toFixed(
+        3
+      )}x -> new modifier: ${modifier.toFixed(3)}`
+    );
 
     log(`Final modifier: ${modifier.toFixed(3)}`);
     return baseHours * modifier;
@@ -965,7 +1036,11 @@ Description: ${taskDto.description}`;
         : '';
     const details: string[] = [];
     if ((taskDto as any).acceptanceCriteria?.length) {
-      details.push(`- Acceptance Criteria: ${(taskDto as any).acceptanceCriteria.join('; ')}`);
+      details.push(
+        `- Acceptance Criteria: ${(taskDto as any).acceptanceCriteria.join(
+          '; '
+        )}`
+      );
     }
     if ((taskDto as any).assumptions?.length) {
       details.push(`- Assumptions: ${(taskDto as any).assumptions.join('; ')}`);
@@ -975,14 +1050,22 @@ Description: ${taskDto.description}`;
     }
     if ((taskDto as any).nfrs?.length) {
       const nfrStr = (taskDto as any).nfrs
-        .map((n: any) => `${n.category}: ${n.requirement}${n.target ? ` (target: ${n.target})` : ''}`)
+        .map(
+          (n: any) =>
+            `${n.category}: ${n.requirement}${
+              n.target ? ` (target: ${n.target})` : ''
+            }`
+        )
         .join(' | ');
       details.push(`- Non-Functional Requirements: ${nfrStr}`);
     }
     if ((taskDto as any).integrations?.length) {
       const intStr = (taskDto as any).integrations
         .map(
-          (i: any) => `${i.name} [${i.type || 'n/a'}, ${i.interaction}${i.auth ? `, auth=${i.auth}` : ''}${i.sandbox ? ', sandbox' : ''}]`
+          (i: any) =>
+            `${i.name} [${i.type || 'n/a'}, ${i.interaction}${
+              i.auth ? `, auth=${i.auth}` : ''
+            }${i.sandbox ? ', sandbox' : ''}]`
         )
         .join(' | ');
       details.push(`- Integrations: ${intStr}`);
@@ -990,7 +1073,11 @@ Description: ${taskDto.description}`;
     if ((taskDto as any).testing) {
       const t = (taskDto as any).testing;
       details.push(
-        `- Testing: unit=${!!t.unit}${typeof t.unitCoverageTarget === 'number' ? ` (coverage ${t.unitCoverageTarget}%)` : ''}, integration=${!!t.integration}, e2e=${!!t.e2e}, performance=${!!t.performance}, security=${!!t.security}`
+        `- Testing: unit=${!!t.unit}${
+          typeof t.unitCoverageTarget === 'number'
+            ? ` (coverage ${t.unitCoverageTarget}%)`
+            : ''
+        }, integration=${!!t.integration}, e2e=${!!t.e2e}, performance=${!!t.performance}, security=${!!t.security}`
       );
     }
     if ((taskDto as any).documentation) {
@@ -1000,14 +1087,23 @@ Description: ${taskDto.description}`;
       );
     }
     if ((taskDto as any).complexityTags?.length) {
-      details.push(`- Complexity Tags: ${((taskDto as any).complexityTags || []).join(', ')}`);
+      details.push(
+        `- Complexity Tags: ${((taskDto as any).complexityTags || []).join(
+          ', '
+        )}`
+      );
     }
     if ((taskDto as any).uiDesignComplexity) {
-      details.push(`- UI Design Complexity: ${(taskDto as any).uiDesignComplexity}`);
+      details.push(
+        `- UI Design Complexity: ${(taskDto as any).uiDesignComplexity}`
+      );
     }
     if ((taskDto as any).needsDataMigration) {
       details.push(
-        `- Data Migration: needs=${!!(taskDto as any).needsDataMigration}, complexity=${(taskDto as any).migrationComplexity || 'n/a'}`
+        `- Data Migration: needs=${!!(taskDto as any)
+          .needsDataMigration}, complexity=${
+          (taskDto as any).migrationComplexity || 'n/a'
+        }`
       );
     }
 
@@ -1061,7 +1157,11 @@ Description: ${taskDto.description}`;
 
     const details: string[] = [];
     if ((taskDto as any).acceptanceCriteria?.length) {
-      details.push(`- Acceptance Criteria: ${(taskDto as any).acceptanceCriteria.join('; ')}`);
+      details.push(
+        `- Acceptance Criteria: ${(taskDto as any).acceptanceCriteria.join(
+          '; '
+        )}`
+      );
     }
     if ((taskDto as any).assumptions?.length) {
       details.push(`- Assumptions: ${(taskDto as any).assumptions.join('; ')}`);
@@ -1071,14 +1171,22 @@ Description: ${taskDto.description}`;
     }
     if ((taskDto as any).nfrs?.length) {
       const nfrStr = (taskDto as any).nfrs
-        .map((n: any) => `${n.category}: ${n.requirement}${n.target ? ` (target: ${n.target})` : ''}`)
+        .map(
+          (n: any) =>
+            `${n.category}: ${n.requirement}${
+              n.target ? ` (target: ${n.target})` : ''
+            }`
+        )
         .join(' | ');
       details.push(`- Non-Functional Requirements: ${nfrStr}`);
     }
     if ((taskDto as any).integrations?.length) {
       const intStr = (taskDto as any).integrations
         .map(
-          (i: any) => `${i.name} [${i.type || 'n/a'}, ${i.interaction}${i.auth ? `, auth=${i.auth}` : ''}${i.sandbox ? ', sandbox' : ''}]`
+          (i: any) =>
+            `${i.name} [${i.type || 'n/a'}, ${i.interaction}${
+              i.auth ? `, auth=${i.auth}` : ''
+            }${i.sandbox ? ', sandbox' : ''}]`
         )
         .join(' | ');
       details.push(`- Integrations: ${intStr}`);
@@ -1086,7 +1194,11 @@ Description: ${taskDto.description}`;
     if ((taskDto as any).testing) {
       const t = (taskDto as any).testing;
       details.push(
-        `- Testing: unit=${!!t.unit}${typeof t.unitCoverageTarget === 'number' ? ` (coverage ${t.unitCoverageTarget}%)` : ''}, integration=${!!t.integration}, e2e=${!!t.e2e}, performance=${!!t.performance}, security=${!!t.security}`
+        `- Testing: unit=${!!t.unit}${
+          typeof t.unitCoverageTarget === 'number'
+            ? ` (coverage ${t.unitCoverageTarget}%)`
+            : ''
+        }, integration=${!!t.integration}, e2e=${!!t.e2e}, performance=${!!t.performance}, security=${!!t.security}`
       );
     }
     if ((taskDto as any).documentation) {
@@ -1096,14 +1208,23 @@ Description: ${taskDto.description}`;
       );
     }
     if ((taskDto as any).complexityTags?.length) {
-      details.push(`- Complexity Tags: ${((taskDto as any).complexityTags || []).join(', ')}`);
+      details.push(
+        `- Complexity Tags: ${((taskDto as any).complexityTags || []).join(
+          ', '
+        )}`
+      );
     }
     if ((taskDto as any).uiDesignComplexity) {
-      details.push(`- UI Design Complexity: ${(taskDto as any).uiDesignComplexity}`);
+      details.push(
+        `- UI Design Complexity: ${(taskDto as any).uiDesignComplexity}`
+      );
     }
     if ((taskDto as any).needsDataMigration) {
       details.push(
-        `- Data Migration: needs=${!!(taskDto as any).needsDataMigration}, complexity=${(taskDto as any).migrationComplexity || 'n/a'}`
+        `- Data Migration: needs=${!!(taskDto as any)
+          .needsDataMigration}, complexity=${
+          (taskDto as any).migrationComplexity || 'n/a'
+        }`
       );
     }
 

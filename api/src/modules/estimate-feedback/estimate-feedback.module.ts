@@ -6,11 +6,12 @@ import { EstimateFeedbackController } from './estimate-feedback.controller';
 import { FeedbackAnalysisService } from './feedback-analysis.service';
 import { CalibrationModule } from '../calibration/calibration.module';
 import { Coefficient } from '../calibration/entities/coefficient.entity';
+import { Estimate } from '../estimates/entities/estimate.entity';
 import { Task } from '../tasks/entities/task.entity';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([EstimateFeedback, Coefficient, Task]),
+    TypeOrmModule.forFeature([EstimateFeedback, Coefficient, Estimate, Task]),
     CalibrationModule,
   ],
   controllers: [EstimateFeedbackController],

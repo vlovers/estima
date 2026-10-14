@@ -5,6 +5,7 @@ import request from 'supertest';
 import cookieParser from 'cookie-parser';
 import { AppModule } from '../../app.module';
 import { AiEstimatorService } from '../ai-estimator/ai-estimator.service';
+import { CalibrationService } from '../calibration/calibration.service';
 import { EstimateSource } from '../estimates/entities/estimate.entity';
 import {
   applyRuntimePostgresEnv,
@@ -33,6 +34,7 @@ type UserResources = {
   projectId: string;
   taskId: string;
   estimateId: string;
+  finalEstimateId: string;
   feedbackId: string;
 };
 
@@ -310,6 +312,13 @@ describe('Runtime database safety and tenant isolation (PostgreSQL integration)'
       .expect(201);
 
     expect(taskResponse.body.estimates.length).toBeGreaterThan(0);
+    const finalEstimate = taskResponse.body.estimates.find(
+      (estimate: { source: EstimateSource }) =>
+        estimate.source === EstimateSource.FINAL
+    );
+    expect(finalEstimate).toEqual(
+      expect.objectContaining({ id: expect.any(String), finalEstimate: 4 })
+    );
 
     const estimateResponse = await request(app.getHttpServer())
       .post('/api/estimates')
@@ -338,6 +347,7 @@ describe('Runtime database safety and tenant isolation (PostgreSQL integration)'
       projectId: projectResponse.body.id,
       taskId: taskResponse.body.id,
       estimateId: estimateResponse.body.id,
+      finalEstimateId: finalEstimate.id,
       feedbackId: feedbackResponse.body.id,
     };
   };
@@ -561,6 +571,111 @@ describe('Runtime database safety and tenant isolation (PostgreSQL integration)'
     expect(projectsB.body.map((project: { id: string }) => project.id)).toEqual(
       [resourcesB.projectId]
     );
+  });
+
+  it('resolves tenant coefficient overrides without cross-tenant leakage or global mutation', async () => {
+    const coefficientsBefore = await coefficientSnapshot(dataSource);
+    await dataSource.query(
+      `
+        INSERT INTO "tenant_calibration_coefficients"
+          ("tenantUserId", "key", "value", "defaultValue", "minValue", "maxValue")
+        VALUES
+          ($1, 'experience.MIDDLE', 1.25, 1, 0.5, 2),
+          ($2, 'experience.MIDDLE', 0.85, 1, 0.5, 2)
+      `,
+      [userA.id, userB.id]
+    );
+
+    const calibrationService = app.get(CalibrationService);
+    const keys = ['experience.MIDDLE', 'project.complexity.MEDIUM'];
+    const userACoefficients = await calibrationService.getEffectiveCoefficients(
+      keys,
+      userA.id
+    );
+    const userBCoefficients = await calibrationService.getEffectiveCoefficients(
+      keys,
+      userB.id
+    );
+    const globalCoefficients =
+      await calibrationService.getEffectiveCoefficients(keys, undefined);
+
+    expect(userACoefficients.get('experience.MIDDLE')).toBe(1.25);
+    expect(userBCoefficients.get('experience.MIDDLE')).toBe(0.85);
+    expect(globalCoefficients.get('experience.MIDDLE')).toBe(1);
+    expect(userACoefficients.get('project.complexity.MEDIUM')).toBe(1);
+    expect(await coefficientSnapshot(dataSource)).toEqual(coefficientsBefore);
+  });
+
+  it('stores feedback estimate snapshots and supports idempotent submissions', async () => {
+    const coefficientsBefore = await coefficientSnapshot(dataSource);
+    const payload = {
+      taskId: resourcesA.taskId,
+      estimateId: resourcesA.finalEstimateId,
+      idempotencyKey: 'user-a-feedback-final-v1',
+      actualHours: 6,
+      rating: 3,
+      reasonForDeviation: 'INCORRECT_INITIAL_ASSUMPTIONS',
+      missedComplexityTags: ['legacy_code'],
+      comment: 'Snapshot this final estimate',
+    };
+
+    const firstResponse = await request(app.getHttpServer())
+      .post('/api/estimate-feedback')
+      .set(authHeader(userA))
+      .send(payload)
+      .expect(201);
+
+    expect(firstResponse.body).toEqual(
+      expect.objectContaining({
+        taskId: resourcesA.taskId,
+        estimateId: resourcesA.finalEstimateId,
+        idempotencyKey: payload.idempotencyKey,
+        estimatedHoursSnapshot: 4,
+        actualHours: 6,
+      })
+    );
+
+    const secondResponse = await request(app.getHttpServer())
+      .post('/api/estimate-feedback')
+      .set(authHeader(userA))
+      .send(payload)
+      .expect(201);
+    expect(secondResponse.body.id).toBe(firstResponse.body.id);
+    expect(await coefficientSnapshot(dataSource)).toEqual(coefficientsBefore);
+  });
+
+  it('rejects cross-tenant estimate references and conflicting idempotency keys', async () => {
+    await request(app.getHttpServer())
+      .post('/api/estimate-feedback')
+      .set(authHeader(userA))
+      .send({
+        taskId: resourcesA.taskId,
+        estimateId: resourcesB.finalEstimateId,
+        actualHours: 7,
+      })
+      .expect(404);
+
+    await request(app.getHttpServer())
+      .post('/api/estimate-feedback')
+      .set(authHeader(userA))
+      .send({
+        taskId: resourcesA.taskId,
+        estimateId: resourcesA.finalEstimateId,
+        idempotencyKey: 'conflicting-feedback-key',
+        actualHours: 7,
+      })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .post('/api/estimate-feedback')
+      .set(authHeader(userA))
+      .send({
+        taskId: resourcesA.taskId,
+        estimateId: resourcesA.finalEstimateId,
+        idempotencyKey: 'conflicting-feedback-key',
+        actualHours: 8,
+      })
+      .expect(409);
   });
 
   it('prevents user A from reading, updating, deleting, or modifying user B resources', async () => {
