@@ -6,6 +6,11 @@ import cookieParser from 'cookie-parser';
 import { AppModule } from '../../app.module';
 import { AiEstimatorService } from '../ai-estimator/ai-estimator.service';
 import { CalibrationService } from '../calibration/calibration.service';
+import { FeedbackCalibrationProcessor } from '../estimate-feedback/feedback-calibration.processor';
+import {
+  EstimateFeedback,
+  FeedbackProcessingStatus,
+} from '../estimate-feedback/entities/estimate-feedback.entity';
 import { EstimateSource } from '../estimates/entities/estimate.entity';
 import {
   applyRuntimePostgresEnv,
@@ -118,6 +123,79 @@ const coefficientSnapshot = async (
       Number(row.value),
     ])
   );
+};
+
+const tenantCoefficientCount = async (
+  dataSource: DataSource,
+  tenantUserId: string,
+  key: string
+): Promise<number> => {
+  const [row] = await dataSource.query(
+    `
+      SELECT count(*)::int AS count
+      FROM "tenant_calibration_coefficients"
+      WHERE "tenantUserId" = $1 AND "key" = $2
+    `,
+    [tenantUserId, key]
+  );
+  return Number(row.count);
+};
+
+const feedbackById = async (
+  dataSource: DataSource,
+  feedbackId: string
+): Promise<EstimateFeedback> => {
+  const [row] = await dataSource.query(
+    `
+      SELECT
+        id,
+        "processingStatus",
+        "processingError",
+        "algorithmVersion",
+        "processedAt"
+      FROM "estimate_feedbacks"
+      WHERE id = $1
+    `,
+    [feedbackId]
+  );
+  return row as EstimateFeedback;
+};
+
+const insertPendingFeedback = async (
+  dataSource: DataSource,
+  values: {
+    taskId: string;
+    estimateId?: string | null;
+    estimatedHoursSnapshot?: number | null;
+    actualHours?: number;
+    missedComplexityTags?: string[];
+    reasonForDeviation?: string | null;
+  }
+): Promise<string> => {
+  const [row] = await dataSource.query(
+    `
+      INSERT INTO "estimate_feedbacks"
+        (
+          "taskId",
+          "estimateId",
+          "estimatedHoursSnapshot",
+          "actualHours",
+          "missedComplexityTags",
+          "reasonForDeviation"
+        )
+      VALUES ($1, $2, $3, $4, $5, $6)
+      RETURNING id
+    `,
+    [
+      values.taskId,
+      values.estimateId ?? null,
+      values.estimatedHoursSnapshot ?? null,
+      values.actualHours ?? 6,
+      values.missedComplexityTags?.join(',') ?? null,
+      values.reasonForDeviation ?? null,
+    ]
+  );
+  return row.id;
 };
 
 const createFreshConfig = (databaseName: string): DisposablePostgresConfig =>
@@ -582,6 +660,8 @@ describe('Runtime database safety and tenant isolation (PostgreSQL integration)'
         VALUES
           ($1, 'experience.MIDDLE', 1.25, 1, 0.5, 2),
           ($2, 'experience.MIDDLE', 0.85, 1, 0.5, 2)
+        ON CONFLICT ("tenantUserId", "key")
+        DO UPDATE SET "value" = EXCLUDED."value"
       `,
       [userA.id, userB.id]
     );
@@ -641,6 +721,292 @@ describe('Runtime database safety and tenant isolation (PostgreSQL integration)'
       .send(payload)
       .expect(201);
     expect(secondResponse.body.id).toBe(firstResponse.body.id);
+    expect(secondResponse.body.processingStatus).toBe(
+      FeedbackProcessingStatus.SKIPPED
+    );
+    expect(secondResponse.body.processingError).toBe(
+      'learning_policy_disabled_until_pr3_4'
+    );
+    expect(await coefficientSnapshot(dataSource)).toEqual(coefficientsBefore);
+  });
+
+  it('processes feedback for two tenants independently', async () => {
+    const coefficientsBefore = await coefficientSnapshot(dataSource);
+    const key = 'complexity.tenant_independent_tag';
+
+    await Promise.all([
+      request(app.getHttpServer())
+        .post('/api/estimate-feedback')
+        .set(authHeader(userA))
+        .send({
+          taskId: resourcesA.taskId,
+          estimateId: resourcesA.finalEstimateId,
+          idempotencyKey: 'tenant-a-independent-feedback',
+          actualHours: 7,
+          missedComplexityTags: ['tenant_independent_tag'],
+        })
+        .expect(201),
+      request(app.getHttpServer())
+        .post('/api/estimate-feedback')
+        .set(authHeader(userB))
+        .send({
+          taskId: resourcesB.taskId,
+          estimateId: resourcesB.finalEstimateId,
+          idempotencyKey: 'tenant-b-independent-feedback',
+          actualHours: 7,
+          missedComplexityTags: ['tenant_independent_tag'],
+        })
+        .expect(201),
+    ]);
+
+    expect(await tenantCoefficientCount(dataSource, userA.id, key)).toBe(1);
+    expect(await tenantCoefficientCount(dataSource, userB.id, key)).toBe(1);
+    expect(await coefficientSnapshot(dataSource)).toEqual(coefficientsBefore);
+  });
+
+  it('serializes duplicate processing attempts for one feedback', async () => {
+    const processor = app.get(FeedbackCalibrationProcessor);
+    const feedbackId = await insertPendingFeedback(dataSource, {
+      taskId: resourcesA.taskId,
+      estimateId: resourcesA.finalEstimateId,
+      estimatedHoursSnapshot: 4,
+      missedComplexityTags: ['duplicate_processing_tag'],
+    });
+
+    const [first, second] = await Promise.all([
+      processor.processFeedback(feedbackId),
+      processor.processFeedback(feedbackId),
+    ]);
+
+    expect([first.processingStatus, second.processingStatus]).toEqual([
+      FeedbackProcessingStatus.SKIPPED,
+      FeedbackProcessingStatus.SKIPPED,
+    ]);
+    const feedback = await feedbackById(dataSource, feedbackId);
+    expect(feedback.processingStatus).toBe(FeedbackProcessingStatus.SKIPPED);
+    expect(await countRows(dataSource, 'coefficient_change_events')).toBe(0);
+  });
+
+  it('handles concurrent feedback for the same coefficient', async () => {
+    const processor = app.get(FeedbackCalibrationProcessor);
+    const key = 'complexity.shared_concurrency_tag';
+    const [feedbackA, feedbackB] = await Promise.all([
+      insertPendingFeedback(dataSource, {
+        taskId: resourcesA.taskId,
+        estimateId: resourcesA.finalEstimateId,
+        estimatedHoursSnapshot: 4,
+        missedComplexityTags: ['shared_concurrency_tag'],
+      }),
+      insertPendingFeedback(dataSource, {
+        taskId: resourcesA.taskId,
+        estimateId: resourcesA.finalEstimateId,
+        estimatedHoursSnapshot: 4,
+        missedComplexityTags: ['shared_concurrency_tag'],
+      }),
+    ]);
+
+    await Promise.all([
+      processor.processFeedback(feedbackA),
+      processor.processFeedback(feedbackB),
+    ]);
+
+    expect(await tenantCoefficientCount(dataSource, userA.id, key)).toBe(1);
+    expect((await feedbackById(dataSource, feedbackA)).processingStatus).toBe(
+      FeedbackProcessingStatus.SKIPPED
+    );
+    expect((await feedbackById(dataSource, feedbackB)).processingStatus).toBe(
+      FeedbackProcessingStatus.SKIPPED
+    );
+  });
+
+  it('initializes missing tenant coefficients safely under concurrency', async () => {
+    const processor = app.get(FeedbackCalibrationProcessor);
+    const key = 'complexity.lazy_initialization_tag';
+    const feedbackIds = await Promise.all(
+      [1, 2, 3, 4].map(() =>
+        insertPendingFeedback(dataSource, {
+          taskId: resourcesA.taskId,
+          estimateId: resourcesA.finalEstimateId,
+          estimatedHoursSnapshot: 4,
+          missedComplexityTags: ['lazy_initialization_tag'],
+        })
+      )
+    );
+
+    await Promise.all(
+      feedbackIds.map((feedbackId) => processor.processFeedback(feedbackId))
+    );
+
+    expect(await tenantCoefficientCount(dataSource, userA.id, key)).toBe(1);
+    for (const feedbackId of feedbackIds) {
+      expect((await feedbackById(dataSource, feedbackId)).processingStatus).toBe(
+        FeedbackProcessingStatus.SKIPPED
+      );
+    }
+  });
+
+  it('rolls back coefficient initialization after an injected failure and supports retry', async () => {
+    const processor = app.get(FeedbackCalibrationProcessor);
+    const key = 'complexity.rollback_retry_tag';
+    const feedbackId = await insertPendingFeedback(dataSource, {
+      taskId: resourcesA.taskId,
+      estimateId: resourcesA.finalEstimateId,
+      estimatedHoursSnapshot: 4,
+      missedComplexityTags: ['rollback_retry_tag'],
+    });
+
+    await expect(
+      processor.processFeedback(feedbackId, {
+        failAfterCoefficientLocks: true,
+      })
+    ).rejects.toThrow('Injected feedback calibration failure');
+
+    let feedback = await feedbackById(dataSource, feedbackId);
+    expect(feedback.processingStatus).toBe(FeedbackProcessingStatus.FAILED);
+    expect(await tenantCoefficientCount(dataSource, userA.id, key)).toBe(0);
+
+    await processor.processFeedback(feedbackId);
+
+    feedback = await feedbackById(dataSource, feedbackId);
+    expect(feedback.processingStatus).toBe(FeedbackProcessingStatus.SKIPPED);
+    expect(feedback.processingError).toBe(
+      'learning_policy_disabled_until_pr3_4'
+    );
+    expect(await tenantCoefficientCount(dataSource, userA.id, key)).toBe(1);
+  });
+
+  it('fails invalid feedback references without tenant coefficient or audit writes', async () => {
+    const processor = app.get(FeedbackCalibrationProcessor);
+    const key = 'complexity.invalid_reference_tag';
+    const feedbackId = await insertPendingFeedback(dataSource, {
+      taskId: resourcesA.taskId,
+      estimateId: resourcesB.finalEstimateId,
+      estimatedHoursSnapshot: 4,
+      missedComplexityTags: ['invalid_reference_tag'],
+    });
+
+    await expect(processor.processFeedback(feedbackId)).rejects.toThrow(
+      /invalid or cross-tenant estimate/
+    );
+
+    const feedback = await feedbackById(dataSource, feedbackId);
+    expect(feedback.processingStatus).toBe(FeedbackProcessingStatus.FAILED);
+    expect(await tenantCoefficientCount(dataSource, userA.id, key)).toBe(0);
+    expect(await countRows(dataSource, 'coefficient_change_events')).toBe(0);
+  });
+
+  it('skips feedback with invalid estimate snapshots', async () => {
+    const processor = app.get(FeedbackCalibrationProcessor);
+    const key = 'complexity.invalid_snapshot_tag';
+    const feedbackId = await insertPendingFeedback(dataSource, {
+      taskId: resourcesA.taskId,
+      estimateId: resourcesA.finalEstimateId,
+      estimatedHoursSnapshot: null,
+      missedComplexityTags: ['invalid_snapshot_tag'],
+    });
+
+    await processor.processFeedback(feedbackId);
+
+    const feedback = await feedbackById(dataSource, feedbackId);
+    expect(feedback.processingStatus).toBe(FeedbackProcessingStatus.SKIPPED);
+    expect(feedback.processingError).toBe('invalid_estimated_hours_snapshot');
+    expect(await tenantCoefficientCount(dataSource, userA.id, key)).toBe(0);
+  });
+
+  it('writes audit events atomically for deterministic policy mutations', async () => {
+    const processor = app.get(FeedbackCalibrationProcessor);
+    const originalPolicy = (processor as any).policy;
+    const coefficientsBefore = await coefficientSnapshot(dataSource);
+    const key = 'complexity.audit_mutation_tag';
+    const feedbackId = await insertPendingFeedback(dataSource, {
+      taskId: resourcesA.taskId,
+      estimateId: resourcesA.finalEstimateId,
+      estimatedHoursSnapshot: 4,
+      missedComplexityTags: ['audit_mutation_tag'],
+    });
+
+    (processor as any).policy = {
+      evaluate: async (context: {
+        targetCoefficientKeys: string[];
+        coefficients: Array<{
+          key: string;
+          value: number;
+          defaultValue: number;
+          eligibleSampleCount: number;
+          totalWeight: number;
+        }>;
+      }) => {
+        const coefficient = context.coefficients.find(
+          (row) => row.key === key
+        );
+        if (!coefficient) {
+          throw new Error('expected audit coefficient row');
+        }
+
+        return {
+          targetCoefficientKeys: context.targetCoefficientKeys,
+          algorithmVersion: 'test-policy-v1',
+          metadata: { test: true },
+          mutations: [
+            {
+              coefficientKey: key,
+              oldValue: coefficient.value,
+              newValue: 1.1,
+              oldEligibleSampleCount: coefficient.eligibleSampleCount,
+              newEligibleSampleCount: coefficient.eligibleSampleCount + 1,
+              oldTotalWeight: coefficient.totalWeight,
+              newTotalWeight: coefficient.totalWeight + 1,
+              defaultValue: coefficient.defaultValue,
+              correctionFactor: 1.1,
+              clampedCorrectionFactor: 1.1,
+              weight: 1,
+              reason: 'deterministic_test_policy',
+              metadata: { source: 'integration-test' },
+            },
+          ],
+        };
+      },
+    };
+
+    try {
+      await processor.processFeedback(feedbackId);
+    } finally {
+      (processor as any).policy = originalPolicy;
+    }
+
+    const [event] = await dataSource.query(
+      `
+        SELECT
+          "tenantUserId",
+          "feedbackId",
+          "coefficientKey",
+          "oldValue",
+          "newValue",
+          "sampleCountBefore",
+          "sampleCountAfter",
+          "algorithmVersion",
+          reason
+        FROM "coefficient_change_events"
+        WHERE "feedbackId" = $1 AND "coefficientKey" = $2
+      `,
+      [feedbackId, key]
+    );
+    expect(event).toEqual(
+      expect.objectContaining({
+        tenantUserId: userA.id,
+        feedbackId,
+        coefficientKey: key,
+        oldValue: 1,
+        newValue: 1.1,
+        sampleCountBefore: 0,
+        sampleCountAfter: 1,
+        algorithmVersion: 'test-policy-v1',
+        reason: 'deterministic_test_policy',
+      })
+    );
+    expect((await feedbackById(dataSource, feedbackId)).processingStatus).toBe(
+      FeedbackProcessingStatus.PROCESSED
+    );
     expect(await coefficientSnapshot(dataSource)).toEqual(coefficientsBefore);
   });
 

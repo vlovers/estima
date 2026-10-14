@@ -12,6 +12,7 @@ import {
   EstimateSource,
 } from '../estimates/entities/estimate.entity';
 import { Task } from '../tasks/entities/task.entity';
+import { FeedbackCalibrationProcessor } from './feedback-calibration.processor';
 
 @Injectable()
 export class EstimateFeedbackService {
@@ -21,7 +22,8 @@ export class EstimateFeedbackService {
     @InjectRepository(Task)
     private readonly taskRepository: Repository<Task>,
     @InjectRepository(Estimate)
-    private readonly estimateRepository: Repository<Estimate>
+    private readonly estimateRepository: Repository<Estimate>,
+    private readonly feedbackCalibrationProcessor: FeedbackCalibrationProcessor
   ) {}
 
   async create(
@@ -62,7 +64,8 @@ export class EstimateFeedbackService {
       missedComplexityTags: dto.missedComplexityTags,
       deviationComment: dto.deviationComment,
     });
-    return this.feedbackRepository.save(feedback);
+    const savedFeedback = await this.feedbackRepository.save(feedback);
+    return this.feedbackCalibrationProcessor.processFeedback(savedFeedback.id);
   }
 
   async findAll(userId: string): Promise<EstimateFeedback[]> {

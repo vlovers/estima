@@ -7,6 +7,7 @@ import {
   EstimateSource,
 } from '../estimates/entities/estimate.entity';
 import { Task } from '../tasks/entities/task.entity';
+import { FeedbackCalibrationProcessor } from './feedback-calibration.processor';
 
 const buildQueryBuilder = (result: {
   getOne?: unknown;
@@ -26,6 +27,7 @@ describe('EstimateFeedbackService tenant isolation', () => {
   let feedbackRepository: jest.Mocked<Repository<EstimateFeedback>>;
   let taskRepository: jest.Mocked<Repository<Task>>;
   let estimateRepository: jest.Mocked<Repository<Estimate>>;
+  let feedbackCalibrationProcessor: jest.Mocked<FeedbackCalibrationProcessor>;
 
   const buildService = (
     taskOwnerMatch = true,
@@ -61,13 +63,21 @@ describe('EstimateFeedbackService tenant isolation', () => {
       createQueryBuilder: jest.fn(() => estimateQb as any),
     } as unknown as jest.Mocked<Repository<Estimate>>;
 
+    feedbackCalibrationProcessor = {
+      processFeedback: jest.fn(
+        async (feedbackId: string) =>
+          ({ id: feedbackId, taskId: 'task-a' } as EstimateFeedback)
+      ),
+    } as unknown as jest.Mocked<FeedbackCalibrationProcessor>;
+
     return {
       estimateQb,
       feedbackQb,
       service: new EstimateFeedbackService(
         feedbackRepository,
         taskRepository,
-        estimateRepository
+        estimateRepository,
+        feedbackCalibrationProcessor
       ),
       taskQb,
     };
@@ -88,6 +98,9 @@ describe('EstimateFeedbackService tenant isolation', () => {
         estimatedHoursSnapshot: 12,
       })
     );
+    expect(feedbackCalibrationProcessor.processFeedback).toHaveBeenCalledWith(
+      'feedback-a'
+    );
   });
 
   it('does not save feedback for another user task', async () => {
@@ -98,6 +111,7 @@ describe('EstimateFeedbackService tenant isolation', () => {
     ).rejects.toBeInstanceOf(NotFoundException);
 
     expect(feedbackRepository.save).not.toHaveBeenCalled();
+    expect(feedbackCalibrationProcessor.processFeedback).not.toHaveBeenCalled();
   });
 
   it('scopes feedback list queries by project owner', async () => {

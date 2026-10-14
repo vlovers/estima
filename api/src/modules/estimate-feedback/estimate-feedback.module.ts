@@ -4,6 +4,8 @@ import { EstimateFeedback } from './entities/estimate-feedback.entity';
 import { EstimateFeedbackService } from './estimate-feedback.service';
 import { EstimateFeedbackController } from './estimate-feedback.controller';
 import { FeedbackAnalysisService } from './feedback-analysis.service';
+import { FeedbackCalibrationProcessor } from './feedback-calibration.processor';
+import { NoLearningFeedbackCalibrationPolicy } from './feedback-calibration-policy';
 import { CalibrationModule } from '../calibration/calibration.module';
 import { Coefficient } from '../calibration/entities/coefficient.entity';
 import { Estimate } from '../estimates/entities/estimate.entity';
@@ -15,7 +17,12 @@ import { Task } from '../tasks/entities/task.entity';
     CalibrationModule,
   ],
   controllers: [EstimateFeedbackController],
-  providers: [EstimateFeedbackService, FeedbackAnalysisService],
-  exports: [EstimateFeedbackService],
+  providers: [
+    EstimateFeedbackService,
+    FeedbackAnalysisService,
+    FeedbackCalibrationProcessor,
+    NoLearningFeedbackCalibrationPolicy,
+  ],
+  exports: [EstimateFeedbackService, FeedbackCalibrationProcessor],
 })
 export class EstimateFeedbackModule {}
