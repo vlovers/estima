@@ -19,6 +19,16 @@ import { GetCurrentUser } from './decorators/get-current-user.decorator';
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
+  private readonly refreshCookieName = 'refreshToken';
+
+  private getRefreshCookieOptions() {
+    return {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax' as const,
+    };
+  }
+
   @Public()
   @UseGuards(AuthGuard('local'))
   @Post('login')
@@ -28,10 +38,11 @@ export class AuthController {
     @Res({ passthrough: true }) res: Response
   ): Promise<{ accessToken: string; user: any }> {
     const tokens = await this.authService.login(req.user);
-    res.cookie('refreshToken', tokens.refreshToken, {
-      httpOnly: true,
-      secure: true, // in production
-    });
+    res.cookie(
+      this.refreshCookieName,
+      tokens.refreshToken,
+      this.getRefreshCookieOptions()
+    );
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { password, refreshToken, ...user } = req.user;
     return { accessToken: tokens.accessToken, user };
@@ -45,16 +56,21 @@ export class AuthController {
     @Res({ passthrough: true }) res: Response
   ): Promise<{ accessToken: string; user: any }> {
     const { user, tokens } = await this.authService.register(createUserDto);
-    res.cookie('refreshToken', tokens.refreshToken, {
-      httpOnly: true,
-      secure: true, // in production
-    });
+    res.cookie(
+      this.refreshCookieName,
+      tokens.refreshToken,
+      this.getRefreshCookieOptions()
+    );
     return { accessToken: tokens.accessToken, user };
   }
 
   @Post('logout')
   @HttpCode(HttpStatus.OK)
-  logout(@GetCurrentUser('sub') userId: string) {
+  logout(
+    @GetCurrentUser('userId') userId: string,
+    @Res({ passthrough: true }) res: Response
+  ) {
+    res.clearCookie(this.refreshCookieName, this.getRefreshCookieOptions());
     return this.authService.logout(userId);
   }
 
@@ -63,7 +79,7 @@ export class AuthController {
   @Post('refresh')
   @HttpCode(HttpStatus.OK)
   refreshTokens(
-    @GetCurrentUser('sub') userId: string,
+    @GetCurrentUser('userId') userId: string,
     @GetCurrentUser('refreshToken') refreshToken: string
   ) {
     return this.authService.refreshTokens(userId, refreshToken);

@@ -3,12 +3,19 @@ import { UsersService } from '../users/users.service';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import { CreateUserDto } from '../users/dto/create-user.dto';
+import { ConfigService } from '@nestjs/config';
+import {
+  getRequiredConfig,
+  JWT_ACCESS_SECRET_KEY,
+  JWT_REFRESH_SECRET_KEY,
+} from './jwt-config';
 
 @Injectable()
 export class AuthService {
   constructor(
     private usersService: UsersService,
-    private jwtService: JwtService
+    private jwtService: JwtService,
+    private configService: ConfigService
   ) {}
 
   async validateUser(email: string, pass: string): Promise<any> {
@@ -28,24 +35,14 @@ export class AuthService {
   }
 
   async register(createUserDto: CreateUserDto) {
-    const salt = await bcrypt.genSalt();
-    const hashedPassword = await bcrypt.hash(createUserDto.password, salt);
-    const newUser = await this.usersService.create(
-      {
-        ...createUserDto,
-        password: hashedPassword,
-      },
-      false
-    );
+    const newUser = await this.usersService.create(createUserDto);
     const tokens = await this.getTokens(newUser.id, newUser.email);
     await this.updateRefreshToken(newUser.id, tokens.refreshToken);
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { password, refreshToken, ...user } = newUser;
-    return { tokens, user };
+    return { tokens, user: newUser };
   }
 
   async logout(userId: string) {
-    return this.usersService.update(userId, { refreshToken: null });
+    return this.usersService.clearRefreshToken(userId);
   }
 
   async refreshTokens(userId: string, refreshToken: string) {
@@ -71,19 +68,32 @@ export class AuthService {
   }
 
   async getTokens(userId: string, email: string) {
+    const accessSecret = getRequiredConfig(
+      this.configService,
+      JWT_ACCESS_SECRET_KEY
+    );
+    const refreshSecret = getRequiredConfig(
+      this.configService,
+      JWT_REFRESH_SECRET_KEY
+    );
+    const accessExpiresIn =
+      this.configService.get<string>('JWT_ACCESS_EXPIRES_IN') || '15m';
+    const refreshExpiresIn =
+      this.configService.get<string>('JWT_REFRESH_EXPIRES_IN') || '7d';
+
     const [accessToken, refreshToken] = await Promise.all([
       this.jwtService.signAsync(
         { sub: userId, email },
         {
-          secret: 'at-secret', // Replace with config service
-          expiresIn: '15m',
+          secret: accessSecret,
+          expiresIn: accessExpiresIn,
         }
       ),
       this.jwtService.signAsync(
         { sub: userId, email },
         {
-          secret: 'rt-secret', // Replace with config service
-          expiresIn: '7d',
+          secret: refreshSecret,
+          expiresIn: refreshExpiresIn,
         }
       ),
     ]);

@@ -8,20 +8,24 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { LocalStrategy } from './strategies/local.strategy';
 import { AccessTokenStrategy } from './strategies/access-token.strategy';
 import { RefreshTokenStrategy } from './strategies/refresh-token.strategy';
-import { APP_GUARD } from '@nestjs/core';
-import { AccessTokenGuard } from './guards/access-token.guard';
+import {
+  getRequiredConfig,
+  JWT_ACCESS_SECRET_KEY,
+} from './jwt-config';
 
 @Module({
   imports: [
     UsersModule,
     PassportModule,
+    ConfigModule,
     JwtModule.registerAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
       useFactory: async (configService: ConfigService) => ({
-        secret: configService.get<string>('JWT_SECRET'),
+        secret: getRequiredConfig(configService, JWT_ACCESS_SECRET_KEY),
         signOptions: {
-          expiresIn: configService.get<string>('JWT_EXPIRES_IN') || '60m',
+          expiresIn:
+            configService.get<string>('JWT_ACCESS_EXPIRES_IN') || '15m',
         },
       }),
     }),
@@ -32,10 +36,6 @@ import { AccessTokenGuard } from './guards/access-token.guard';
     LocalStrategy,
     AccessTokenStrategy,
     RefreshTokenStrategy,
-    {
-      provide: APP_GUARD,
-      useClass: AccessTokenGuard,
-    },
   ],
 })
 export class AuthModule {}
