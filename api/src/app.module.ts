@@ -10,6 +10,8 @@ import { AuthModule } from './modules/auth/auth.module';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { APP_GUARD } from '@nestjs/core';
 import { Module } from '@nestjs/common';
+import { DataSource, DataSourceOptions } from 'typeorm';
+import { assertRuntimeDatabaseSchema } from './database/runtime-schema.assertion';
 
 @Module({
   imports: [
@@ -26,9 +28,23 @@ import { Module } from '@nestjs/common';
         password: configService.get<string>('POSTGRES_PASSWORD'),
         database: configService.get<string>('POSTGRES_DB'),
         autoLoadEntities: true,
-        synchronize: true,
+        synchronize: false,
         dropSchema: false,
+        retryAttempts: 1,
       }),
+      dataSourceFactory: async (options?: DataSourceOptions) => {
+        const dataSource = new DataSource(options);
+        try {
+          await dataSource.initialize();
+          await assertRuntimeDatabaseSchema(dataSource);
+          return dataSource;
+        } catch (error) {
+          if (dataSource.isInitialized) {
+            await dataSource.destroy();
+          }
+          throw error;
+        }
+      },
       inject: [ConfigService],
     }),
 
