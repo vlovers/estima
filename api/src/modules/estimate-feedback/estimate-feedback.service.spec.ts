@@ -1,5 +1,5 @@
 import { ConflictException, NotFoundException } from '@nestjs/common';
-import { Repository } from 'typeorm';
+import { QueryFailedError, Repository } from 'typeorm';
 import { EstimateFeedback } from './entities/estimate-feedback.entity';
 import { EstimateFeedbackService } from './estimate-feedback.service';
 import {
@@ -19,6 +19,7 @@ const buildQueryBuilder = (result: {
   where: jest.fn().mockReturnThis(),
   andWhere: jest.fn().mockReturnThis(),
   orderBy: jest.fn().mockReturnThis(),
+  addOrderBy: jest.fn().mockReturnThis(),
   getOne: jest.fn().mockResolvedValue(result.getOne ?? null),
   getMany: jest.fn().mockResolvedValue(result.getMany ?? []),
 });
@@ -84,7 +85,7 @@ describe('EstimateFeedbackService tenant isolation', () => {
   };
 
   it('accepts feedback only after validating task ownership', async () => {
-    const { service, taskQb } = buildService(true);
+    const { service, taskQb, estimateQb } = buildService(true);
 
     await service.create({ taskId: 'task-a', actualHours: 10 }, 'user-a');
 
@@ -101,6 +102,11 @@ describe('EstimateFeedbackService tenant isolation', () => {
     expect(feedbackCalibrationProcessor.processFeedback).toHaveBeenCalledWith(
       'feedback-a'
     );
+    expect(estimateQb.orderBy).toHaveBeenCalledWith(
+      'estimate.createdAt',
+      'DESC'
+    );
+    expect(estimateQb.addOrderBy).toHaveBeenCalledWith('estimate.id', 'DESC');
   });
 
   it('does not save feedback for another user task', async () => {
@@ -182,5 +188,70 @@ describe('EstimateFeedbackService tenant isolation', () => {
       )
     ).rejects.toBeInstanceOf(ConflictException);
     expect(feedbackRepository.save).not.toHaveBeenCalled();
+  });
+
+  it('returns the existing feedback when an idempotent insert races on the unique index', async () => {
+    const { service } = buildService(true);
+    const existing = {
+      id: 'feedback-existing',
+      taskId: 'task-a',
+      estimateId: 'estimate-final',
+      actualHours: 10,
+    } as EstimateFeedback;
+    (feedbackRepository.save as jest.Mock).mockRejectedValueOnce(
+      new QueryFailedError('insert', [], { code: '23505' } as any)
+    );
+    (feedbackRepository.createQueryBuilder as jest.Mock).mockReturnValueOnce(
+      buildQueryBuilder({ getOne: null }) as any
+    );
+    (feedbackRepository.createQueryBuilder as jest.Mock).mockReturnValueOnce(
+      buildQueryBuilder({ getOne: existing }) as any
+    );
+
+    await service.create(
+      {
+        taskId: 'task-a',
+        estimateId: 'estimate-final',
+        idempotencyKey: 'race-key',
+        actualHours: 10,
+      },
+      'user-a'
+    );
+
+    expect(feedbackCalibrationProcessor.processFeedback).toHaveBeenCalledWith(
+      'feedback-existing'
+    );
+  });
+
+  it('returns conflict when an idempotent insert race reveals a different payload', async () => {
+    const { service } = buildService(true);
+    (feedbackRepository.save as jest.Mock).mockRejectedValueOnce(
+      new QueryFailedError('insert', [], { code: '23505' } as any)
+    );
+    (feedbackRepository.createQueryBuilder as jest.Mock).mockReturnValueOnce(
+      buildQueryBuilder({ getOne: null }) as any
+    );
+    (feedbackRepository.createQueryBuilder as jest.Mock).mockReturnValueOnce(
+      buildQueryBuilder({
+        getOne: {
+          id: 'feedback-existing',
+          taskId: 'task-a',
+          estimateId: 'estimate-final',
+          actualHours: 9,
+        } as EstimateFeedback,
+      }) as any
+    );
+
+    await expect(
+      service.create(
+        {
+          taskId: 'task-a',
+          estimateId: 'estimate-final',
+          idempotencyKey: 'race-key',
+          actualHours: 10,
+        },
+        'user-a'
+      )
+    ).rejects.toBeInstanceOf(ConflictException);
   });
 });

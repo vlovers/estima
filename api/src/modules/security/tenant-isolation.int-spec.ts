@@ -240,6 +240,7 @@ const prepareDatabase = async (
         'BaselineCurrentSchema20261014000000',
         'SeedBaselineCoefficients20261014000001',
         'AddTenantCalibrationFoundation20261014000002',
+        'AddEstimateTimestamps20261014000003',
       ]);
     }
   } finally {
@@ -730,9 +731,99 @@ describe('Runtime database safety and tenant isolation (PostgreSQL integration)'
     expect(await coefficientSnapshot(dataSource)).toEqual(coefficientsBefore);
   });
 
+  it('selects the latest final estimate by creation time instead of UUID order', async () => {
+    const olderId = 'ffffffff-ffff-4fff-8fff-ffffffffffff';
+    const newerId = '00000000-0000-4000-8000-000000000001';
+    await dataSource.query(
+      `
+        INSERT INTO "estimates"
+          ("id", "taskId", "source", "finalEstimate", "createdAt", "updatedAt")
+        VALUES
+          ($1, $3, 'final', 11, now() - interval '10 minutes', now() - interval '10 minutes'),
+          ($2, $3, 'final', 13, now(), now())
+      `,
+      [olderId, newerId, resourcesA.taskId]
+    );
+
+    const response = await request(app.getHttpServer())
+      .post('/api/estimate-feedback')
+      .set(authHeader(userA))
+      .send({
+        taskId: resourcesA.taskId,
+        idempotencyKey: 'latest-final-created-at-order',
+        actualHours: 13,
+      })
+      .expect(201);
+
+    expect(response.body).toEqual(
+      expect.objectContaining({
+        estimateId: newerId,
+        estimatedHoursSnapshot: 13,
+      })
+    );
+  });
+
+  it('handles concurrent identical idempotent submissions with one stored feedback', async () => {
+    const payload = {
+      taskId: resourcesA.taskId,
+      estimateId: resourcesA.finalEstimateId,
+      idempotencyKey: 'concurrent-identical-feedback',
+      actualHours: 6,
+      rating: 4,
+      comment: 'same concurrent payload',
+    };
+
+    const responses = await Promise.all(
+      [1, 2].map(() =>
+        request(app.getHttpServer())
+          .post('/api/estimate-feedback')
+          .set(authHeader(userA))
+          .send(payload)
+      )
+    );
+
+    expect(responses.map((response) => response.status).sort()).toEqual([
+      201, 201,
+    ]);
+    expect(new Set(responses.map((response) => response.body.id)).size).toBe(1);
+    const [row] = await dataSource.query(
+      `
+        SELECT count(*)::int AS count
+        FROM "estimate_feedbacks"
+        WHERE "taskId" = $1 AND "idempotencyKey" = $2
+      `,
+      [payload.taskId, payload.idempotencyKey]
+    );
+    expect(Number(row.count)).toBe(1);
+  });
+
+  it('returns conflict for concurrent idempotent submissions with different payloads', async () => {
+    const basePayload = {
+      taskId: resourcesA.taskId,
+      estimateId: resourcesA.finalEstimateId,
+      idempotencyKey: 'concurrent-conflicting-feedback',
+      rating: 4,
+    };
+
+    const responses = await Promise.all([
+      request(app.getHttpServer())
+        .post('/api/estimate-feedback')
+        .set(authHeader(userA))
+        .send({ ...basePayload, actualHours: 6 }),
+      request(app.getHttpServer())
+        .post('/api/estimate-feedback')
+        .set(authHeader(userA))
+        .send({ ...basePayload, actualHours: 7 }),
+    ]);
+
+    expect(responses.map((response) => response.status).sort()).toEqual([
+      201, 409,
+    ]);
+  });
+
   it('processes feedback for two tenants independently', async () => {
     const coefficientsBefore = await coefficientSnapshot(dataSource);
-    const key = 'complexity.tenant_independent_tag';
+    const key = 'complexity.third_party_integration';
 
     await Promise.all([
       request(app.getHttpServer())
@@ -743,7 +834,7 @@ describe('Runtime database safety and tenant isolation (PostgreSQL integration)'
           estimateId: resourcesA.finalEstimateId,
           idempotencyKey: 'tenant-a-independent-feedback',
           actualHours: 7,
-          missedComplexityTags: ['tenant_independent_tag'],
+          missedComplexityTags: ['third_party_integration'],
         })
         .expect(201),
       request(app.getHttpServer())
@@ -754,7 +845,7 @@ describe('Runtime database safety and tenant isolation (PostgreSQL integration)'
           estimateId: resourcesB.finalEstimateId,
           idempotencyKey: 'tenant-b-independent-feedback',
           actualHours: 7,
-          missedComplexityTags: ['tenant_independent_tag'],
+          missedComplexityTags: ['third_party_integration'],
         })
         .expect(201),
     ]);
@@ -770,7 +861,7 @@ describe('Runtime database safety and tenant isolation (PostgreSQL integration)'
       taskId: resourcesA.taskId,
       estimateId: resourcesA.finalEstimateId,
       estimatedHoursSnapshot: 4,
-      missedComplexityTags: ['duplicate_processing_tag'],
+      missedComplexityTags: ['performance_critical'],
     });
 
     const [first, second] = await Promise.all([
@@ -789,19 +880,19 @@ describe('Runtime database safety and tenant isolation (PostgreSQL integration)'
 
   it('handles concurrent feedback for the same coefficient', async () => {
     const processor = app.get(FeedbackCalibrationProcessor);
-    const key = 'complexity.shared_concurrency_tag';
+    const key = 'complexity.legacy_code';
     const [feedbackA, feedbackB] = await Promise.all([
       insertPendingFeedback(dataSource, {
         taskId: resourcesA.taskId,
         estimateId: resourcesA.finalEstimateId,
         estimatedHoursSnapshot: 4,
-        missedComplexityTags: ['shared_concurrency_tag'],
+        missedComplexityTags: ['legacy_code'],
       }),
       insertPendingFeedback(dataSource, {
         taskId: resourcesA.taskId,
         estimateId: resourcesA.finalEstimateId,
         estimatedHoursSnapshot: 4,
-        missedComplexityTags: ['shared_concurrency_tag'],
+        missedComplexityTags: ['legacy_code'],
       }),
     ]);
 
@@ -821,14 +912,14 @@ describe('Runtime database safety and tenant isolation (PostgreSQL integration)'
 
   it('initializes missing tenant coefficients safely under concurrency', async () => {
     const processor = app.get(FeedbackCalibrationProcessor);
-    const key = 'complexity.lazy_initialization_tag';
+    const key = 'complexity.new_infra';
     const feedbackIds = await Promise.all(
       [1, 2, 3, 4].map(() =>
         insertPendingFeedback(dataSource, {
           taskId: resourcesA.taskId,
           estimateId: resourcesA.finalEstimateId,
           estimatedHoursSnapshot: 4,
-          missedComplexityTags: ['lazy_initialization_tag'],
+          missedComplexityTags: ['new_infra'],
         })
       )
     );
@@ -847,12 +938,12 @@ describe('Runtime database safety and tenant isolation (PostgreSQL integration)'
 
   it('rolls back coefficient initialization after an injected failure and supports retry', async () => {
     const processor = app.get(FeedbackCalibrationProcessor);
-    const key = 'complexity.rollback_retry_tag';
+    const key = 'complexity.refactor';
     const feedbackId = await insertPendingFeedback(dataSource, {
       taskId: resourcesA.taskId,
       estimateId: resourcesA.finalEstimateId,
       estimatedHoursSnapshot: 4,
-      missedComplexityTags: ['rollback_retry_tag'],
+      missedComplexityTags: ['refactor'],
     });
 
     await expect(
@@ -877,12 +968,12 @@ describe('Runtime database safety and tenant isolation (PostgreSQL integration)'
 
   it('fails invalid feedback references without tenant coefficient or audit writes', async () => {
     const processor = app.get(FeedbackCalibrationProcessor);
-    const key = 'complexity.invalid_reference_tag';
+    const key = 'complexity.concurrency';
     const feedbackId = await insertPendingFeedback(dataSource, {
       taskId: resourcesA.taskId,
       estimateId: resourcesB.finalEstimateId,
       estimatedHoursSnapshot: 4,
-      missedComplexityTags: ['invalid_reference_tag'],
+      missedComplexityTags: ['concurrency'],
     });
 
     await expect(processor.processFeedback(feedbackId)).rejects.toThrow(
@@ -897,12 +988,12 @@ describe('Runtime database safety and tenant isolation (PostgreSQL integration)'
 
   it('skips feedback with invalid estimate snapshots', async () => {
     const processor = app.get(FeedbackCalibrationProcessor);
-    const key = 'complexity.invalid_snapshot_tag';
+    const key = 'complexity.data_modeling';
     const feedbackId = await insertPendingFeedback(dataSource, {
       taskId: resourcesA.taskId,
       estimateId: resourcesA.finalEstimateId,
       estimatedHoursSnapshot: null,
-      missedComplexityTags: ['invalid_snapshot_tag'],
+      missedComplexityTags: ['data_modeling'],
     });
 
     await processor.processFeedback(feedbackId);
@@ -917,12 +1008,12 @@ describe('Runtime database safety and tenant isolation (PostgreSQL integration)'
     const processor = app.get(FeedbackCalibrationProcessor);
     const originalPolicy = (processor as any).policy;
     const coefficientsBefore = await coefficientSnapshot(dataSource);
-    const key = 'complexity.audit_mutation_tag';
+    const key = 'complexity.data_modeling';
     const feedbackId = await insertPendingFeedback(dataSource, {
       taskId: resourcesA.taskId,
       estimateId: resourcesA.finalEstimateId,
       estimatedHoursSnapshot: 4,
-      missedComplexityTags: ['audit_mutation_tag'],
+      missedComplexityTags: ['data_modeling'],
     });
 
     (processor as any).policy = {
@@ -996,7 +1087,7 @@ describe('Runtime database safety and tenant isolation (PostgreSQL integration)'
         tenantUserId: userA.id,
         feedbackId,
         coefficientKey: key,
-        oldValue: 1,
+        oldValue: 1.3,
         newValue: 1.1,
         sampleCountBefore: 0,
         sampleCountAfter: 1,
@@ -1008,6 +1099,226 @@ describe('Runtime database safety and tenant isolation (PostgreSQL integration)'
       FeedbackProcessingStatus.PROCESSED
     );
     expect(await coefficientSnapshot(dataSource)).toEqual(coefficientsBefore);
+  });
+
+  it('rolls back invalid policy mutations and records a retryable failure', async () => {
+    const processor = app.get(FeedbackCalibrationProcessor);
+    const originalPolicy = (processor as any).policy;
+    const key = 'complexity.concurrency';
+    const feedbackId = await insertPendingFeedback(dataSource, {
+      taskId: resourcesA.taskId,
+      estimateId: resourcesA.finalEstimateId,
+      estimatedHoursSnapshot: 4,
+      missedComplexityTags: ['concurrency'],
+    });
+
+    (processor as any).policy = {
+      evaluate: async (context: {
+        targetCoefficientKeys: string[];
+        coefficients: Array<{
+          key: string;
+          value: number;
+          defaultValue: number;
+          eligibleSampleCount: number;
+          totalWeight: number;
+        }>;
+      }) => {
+        const coefficient = context.coefficients.find(
+          (row) => row.key === key
+        );
+        if (!coefficient) {
+          throw new Error('expected concurrency coefficient row');
+        }
+
+        return {
+          targetCoefficientKeys: context.targetCoefficientKeys,
+          algorithmVersion: 'invalid-test-policy',
+          metadata: null,
+          mutations: [
+            {
+              coefficientKey: key,
+              oldValue: coefficient.value,
+              newValue: 3,
+              oldEligibleSampleCount: coefficient.eligibleSampleCount,
+              newEligibleSampleCount: coefficient.eligibleSampleCount + 1,
+              oldTotalWeight: coefficient.totalWeight,
+              newTotalWeight: coefficient.totalWeight + 1,
+              defaultValue: coefficient.defaultValue,
+              correctionFactor: 3,
+              clampedCorrectionFactor: 3,
+              weight: 1,
+              reason: 'invalid_out_of_bounds',
+              metadata: null,
+            },
+          ],
+        };
+      },
+    };
+
+    try {
+      await expect(processor.processFeedback(feedbackId)).rejects.toThrow(
+        /Invalid coefficient value/
+      );
+    } finally {
+      (processor as any).policy = originalPolicy;
+    }
+
+    const feedback = await feedbackById(dataSource, feedbackId);
+    expect(feedback.processingStatus).toBe(FeedbackProcessingStatus.FAILED);
+    expect(feedback.processingError).toContain('Invalid coefficient value');
+    expect(await tenantCoefficientCount(dataSource, userA.id, key)).toBe(0);
+    const [eventCount] = await dataSource.query(
+      `
+        SELECT count(*)::int AS count
+        FROM "coefficient_change_events"
+        WHERE "feedbackId" = $1
+      `,
+      [feedbackId]
+    );
+    expect(Number(eventCount.count)).toBe(0);
+  });
+
+  it('rejects malformed policy mutation shapes before applying changes', async () => {
+    const processor = app.get(FeedbackCalibrationProcessor);
+    const originalPolicy = (processor as any).policy;
+    const cases = [
+      {
+        label: 'duplicate',
+        key: 'complexity.legacy_code',
+        buildResult: (context: any, coefficient: any) => ({
+          targetCoefficientKeys: context.targetCoefficientKeys,
+          algorithmVersion: 'invalid-duplicate-policy',
+          metadata: null,
+          mutations: [
+            {
+              coefficientKey: coefficient.key,
+              oldValue: coefficient.value,
+              newValue: 1.2,
+              oldEligibleSampleCount: coefficient.eligibleSampleCount,
+              newEligibleSampleCount: coefficient.eligibleSampleCount + 1,
+              oldTotalWeight: coefficient.totalWeight,
+              newTotalWeight: coefficient.totalWeight + 1,
+              defaultValue: coefficient.defaultValue,
+              correctionFactor: 1.2,
+              clampedCorrectionFactor: 1.2,
+              weight: 1,
+              reason: 'duplicate_a',
+              metadata: null,
+            },
+            {
+              coefficientKey: coefficient.key,
+              oldValue: coefficient.value,
+              newValue: 1.3,
+              oldEligibleSampleCount: coefficient.eligibleSampleCount,
+              newEligibleSampleCount: coefficient.eligibleSampleCount + 1,
+              oldTotalWeight: coefficient.totalWeight,
+              newTotalWeight: coefficient.totalWeight + 1,
+              defaultValue: coefficient.defaultValue,
+              correctionFactor: 1.3,
+              clampedCorrectionFactor: 1.3,
+              weight: 1,
+              reason: 'duplicate_b',
+              metadata: null,
+            },
+          ],
+        }),
+        error: /duplicated mutation keys/,
+      },
+      {
+        label: 'missing-target',
+        key: 'complexity.third_party_integration',
+        buildResult: (_context: any) => ({
+          targetCoefficientKeys: [],
+          algorithmVersion: 'invalid-missing-target-policy',
+          metadata: null,
+          mutations: [],
+        }),
+        error: /target keys do not match/,
+      },
+      {
+        label: 'unexpected',
+        key: 'complexity.performance_critical',
+        buildResult: (context: any) => ({
+          targetCoefficientKeys: context.targetCoefficientKeys,
+          algorithmVersion: 'invalid-unexpected-policy',
+          metadata: null,
+          mutations: [
+            {
+              coefficientKey: 'complexity.not_a_locked_key',
+              oldValue: 1,
+              newValue: 1.1,
+              oldEligibleSampleCount: 0,
+              newEligibleSampleCount: 1,
+              oldTotalWeight: 0,
+              newTotalWeight: 1,
+              defaultValue: 1,
+              correctionFactor: 1.1,
+              clampedCorrectionFactor: 1.1,
+              weight: 1,
+              reason: 'unexpected_key',
+              metadata: null,
+            },
+          ],
+        }),
+        error: /unexpected mutation key/,
+      },
+    ];
+
+    try {
+      for (const testCase of cases) {
+        const tag = testCase.key.replace('complexity.', '');
+        const feedbackId = await insertPendingFeedback(dataSource, {
+          taskId: resourcesA.taskId,
+          estimateId: resourcesA.finalEstimateId,
+          estimatedHoursSnapshot: 4,
+          missedComplexityTags: [tag],
+        });
+        (processor as any).policy = {
+          evaluate: async (context: any) => {
+            const coefficient = context.coefficients.find(
+              (row: { key: string }) => row.key === testCase.key
+            );
+            return testCase.buildResult(context, coefficient);
+          },
+        };
+
+        await expect(processor.processFeedback(feedbackId)).rejects.toThrow(
+          testCase.error
+        );
+        expect((await feedbackById(dataSource, feedbackId)).processingStatus).toBe(
+          FeedbackProcessingStatus.FAILED
+        );
+        const [eventCount] = await dataSource.query(
+          `
+            SELECT count(*)::int AS count
+            FROM "coefficient_change_events"
+            WHERE "feedbackId" = $1
+          `,
+          [feedbackId]
+        );
+        expect(Number(eventCount.count)).toBe(0);
+      }
+    } finally {
+      (processor as any).policy = originalPolicy;
+    }
+  });
+
+  it('skips unknown coefficient keys without lazy initialization', async () => {
+    const processor = app.get(FeedbackCalibrationProcessor);
+    const key = 'complexity.unknown_calibration_tag';
+    const feedbackId = await insertPendingFeedback(dataSource, {
+      taskId: resourcesA.taskId,
+      estimateId: resourcesA.finalEstimateId,
+      estimatedHoursSnapshot: 4,
+      missedComplexityTags: ['unknown_calibration_tag'],
+    });
+
+    await processor.processFeedback(feedbackId);
+
+    const feedback = await feedbackById(dataSource, feedbackId);
+    expect(feedback.processingStatus).toBe(FeedbackProcessingStatus.SKIPPED);
+    expect(feedback.processingError).toBe(`unknown_coefficient_keys:${key}`);
+    expect(await tenantCoefficientCount(dataSource, userA.id, key)).toBe(0);
   });
 
   it('rejects cross-tenant estimate references and conflicting idempotency keys', async () => {

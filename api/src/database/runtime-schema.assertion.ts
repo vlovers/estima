@@ -15,6 +15,7 @@ const REQUIRED_MIGRATIONS = [
   'BaselineCurrentSchema20261014000000',
   'SeedBaselineCoefficients20261014000001',
   'AddTenantCalibrationFoundation20261014000002',
+  'AddEstimateTimestamps20261014000003',
 ];
 
 const LEGACY_MIGRATIONS = [

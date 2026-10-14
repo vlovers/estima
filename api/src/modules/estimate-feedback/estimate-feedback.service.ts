@@ -6,7 +6,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Repository } from 'typeorm';
+import { QueryFailedError, Repository } from 'typeorm';
 import {
   Estimate,
   EstimateSource,
@@ -64,7 +64,27 @@ export class EstimateFeedbackService {
       missedComplexityTags: dto.missedComplexityTags,
       deviationComment: dto.deviationComment,
     });
-    const savedFeedback = await this.feedbackRepository.save(feedback);
+    let savedFeedback: EstimateFeedback;
+    try {
+      savedFeedback = await this.feedbackRepository.save(feedback);
+    } catch (error) {
+      if (!dto.idempotencyKey || !this.isUniqueConstraintViolation(error)) {
+        throw error;
+      }
+
+      const existing = await this.findExistingIdempotentFeedback(
+        dto.taskId,
+        dto.idempotencyKey,
+        userId
+      );
+      if (existing && this.isSameIdempotentPayload(existing, dto)) {
+        return this.feedbackCalibrationProcessor.processFeedback(existing.id);
+      }
+
+      throw new ConflictException(
+        'Idempotency key has already been used with a different feedback payload.'
+      );
+    }
     return this.feedbackCalibrationProcessor.processFeedback(savedFeedback.id);
   }
 
@@ -110,7 +130,10 @@ export class EstimateFeedbackService {
     if (dto.estimateId) {
       qb.andWhere('estimate.id = :estimateId', { estimateId: dto.estimateId });
     } else {
-      qb.orderBy('estimate.id', 'DESC');
+      qb.orderBy('estimate.createdAt', 'DESC').addOrderBy(
+        'estimate.id',
+        'DESC'
+      );
     }
 
     const estimate = await qb.getOne();
@@ -142,6 +165,15 @@ export class EstimateFeedbackService {
       (existing.deviationComment ?? undefined) === dto.deviationComment &&
       JSON.stringify(normalizedExistingTags) ===
         JSON.stringify(normalizedDtoTags)
+    );
+  }
+
+  private isUniqueConstraintViolation(error: unknown): boolean {
+    return (
+      error instanceof QueryFailedError &&
+      typeof (error as QueryFailedError & { code?: string }).code ===
+        'string' &&
+      (error as QueryFailedError & { code?: string }).code === '23505'
     );
   }
 

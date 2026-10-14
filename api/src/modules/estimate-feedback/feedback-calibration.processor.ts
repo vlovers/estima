@@ -12,6 +12,7 @@ import {
   FeedbackProcessingStatus,
 } from './entities/estimate-feedback.entity';
 import {
+  FeedbackCoefficientMutation,
   FeedbackCalibrationPolicyResult,
   NoLearningFeedbackCalibrationPolicy,
 } from './feedback-calibration-policy';
@@ -30,6 +31,11 @@ const TERMINAL_STATUSES = new Set<FeedbackProcessingStatus>([
   FeedbackProcessingStatus.PROCESSED,
   FeedbackProcessingStatus.SKIPPED,
 ]);
+
+const TENANT_COEFFICIENT_MIN_VALUE = 0.5;
+const TENANT_COEFFICIENT_MAX_VALUE = 2;
+const COEFFICIENT_KEY_PATTERN =
+  /^(experience\.[A-Z]+|project\.complexity\.[A-Z]+|complexity\.[a-z0-9_]+)$/;
 
 @Injectable()
 export class FeedbackCalibrationProcessor {
@@ -52,7 +58,17 @@ export class FeedbackCalibrationProcessor {
           this.processFeedbackInTransaction(manager, feedbackId, options)
       );
     } catch (error) {
-      await this.markFeedbackFailed(feedbackId, error);
+      try {
+        await this.markFeedbackFailed(feedbackId, error);
+      } catch (markFailedError) {
+        const message =
+          markFailedError instanceof Error
+            ? markFailedError.message
+            : String(markFailedError);
+        this.logger.error(
+          `Unable to persist failed status for feedback ${feedbackId}: ${message}`
+        );
+      }
       throw error;
     }
   }
@@ -103,6 +119,19 @@ export class FeedbackCalibrationProcessor {
         manager,
         feedback,
         'no_target_coefficients',
+        'no-learning-pr3.3'
+      );
+    }
+
+    const unknownTargetKeys = await this.findUnknownCoefficientKeys(
+      manager,
+      targetCoefficientKeys
+    );
+    if (unknownTargetKeys.length > 0) {
+      return this.markSkipped(
+        manager,
+        feedback,
+        `unknown_coefficient_keys:${unknownTargetKeys.join(',')}`,
         'no-learning-pr3.3'
       );
     }
@@ -213,7 +242,17 @@ export class FeedbackCalibrationProcessor {
       keys.add(`complexity.${tag}`);
     }
 
-    return [...keys].filter(Boolean).sort();
+    return [...keys]
+      .filter((key) => COEFFICIENT_KEY_PATTERN.test(key))
+      .sort();
+  }
+
+  private async findUnknownCoefficientKeys(
+    manager: EntityManager,
+    keys: string[]
+  ): Promise<string[]> {
+    const defaultValues = await this.loadDefaultValues(manager, keys);
+    return keys.filter((key) => !defaultValues.has(key));
   }
 
   private async ensureAndLockTenantCoefficients(
@@ -225,7 +264,18 @@ export class FeedbackCalibrationProcessor {
     const defaultValues = await this.loadDefaultValues(manager, sortedKeys);
 
     for (const key of sortedKeys) {
-      const defaultValue = defaultValues.get(key) ?? 1;
+      const defaultValue = defaultValues.get(key);
+      if (!this.isValidCoefficientValue(defaultValue)) {
+        throw new Error(`Missing valid global default for coefficient ${key}`);
+      }
+      if (
+        defaultValue < TENANT_COEFFICIENT_MIN_VALUE ||
+        defaultValue > TENANT_COEFFICIENT_MAX_VALUE
+      ) {
+        throw new Error(
+          `Global default for coefficient ${key} is outside tenant bounds`
+        );
+      }
       await manager
         .createQueryBuilder()
         .insert()
@@ -235,8 +285,8 @@ export class FeedbackCalibrationProcessor {
           key,
           value: defaultValue,
           defaultValue,
-          minValue: 0.5,
-          maxValue: 2,
+          minValue: TENANT_COEFFICIENT_MIN_VALUE,
+          maxValue: TENANT_COEFFICIENT_MAX_VALUE,
           eligibleSampleCount: 0,
           totalWeight: 0,
           ewmaLogError: 0,
@@ -272,7 +322,7 @@ export class FeedbackCalibrationProcessor {
 
     return new Map(
       coefficients
-        .filter((coefficient) => Number.isFinite(coefficient.value))
+        .filter((coefficient) => this.isValidCoefficientValue(coefficient.value))
         .map((coefficient) => [coefficient.key, coefficient.value])
     );
   }
@@ -293,6 +343,14 @@ export class FeedbackCalibrationProcessor {
       );
     }
 
+    const lockedByKey = new Map(
+      (lockedCoefficients ?? []).map((coefficient) => [
+        coefficient.key,
+        coefficient,
+      ])
+    );
+    this.validatePolicyResult(policyResult, lockedByKey);
+
     if (policyResult.mutations.length === 0) {
       return this.markSkipped(
         manager,
@@ -306,12 +364,6 @@ export class FeedbackCalibrationProcessor {
       TenantCalibrationCoefficient
     );
     const eventRepository = manager.getRepository(CoefficientChangeEvent);
-    const lockedByKey = new Map(
-      (lockedCoefficients ?? []).map((coefficient) => [
-        coefficient.key,
-        coefficient,
-      ])
-    );
     let appliedMutations = 0;
 
     for (const mutation of policyResult.mutations) {
@@ -330,7 +382,7 @@ export class FeedbackCalibrationProcessor {
           `Policy old value mismatch for ${mutation.coefficientKey}`
         );
       }
-
+      this.validateMutation(mutation, coefficient);
       await coefficientRepository.update(
         {
           tenantUserId,
@@ -378,6 +430,107 @@ export class FeedbackCalibrationProcessor {
     feedback.algorithmVersion = policyResult.algorithmVersion;
     feedback.processedAt = new Date();
     return manager.getRepository(EstimateFeedback).save(feedback);
+  }
+
+  private validatePolicyResult(
+    policyResult: FeedbackCalibrationPolicyResult,
+    lockedByKey: Map<string, TenantCalibrationCoefficient>
+  ): void {
+    if (!policyResult.algorithmVersion) {
+      throw new Error('Policy result must include an algorithm version');
+    }
+
+    const targetKeys = [...new Set(policyResult.targetCoefficientKeys)].sort();
+    const lockedKeys = [...lockedByKey.keys()].sort();
+    if (JSON.stringify(targetKeys) !== JSON.stringify(lockedKeys)) {
+      throw new Error('Policy target keys do not match locked coefficient rows');
+    }
+
+    if (policyResult.mutations.length === 0) {
+      return;
+    }
+
+    const mutationKeys = policyResult.mutations.map(
+      (mutation) => mutation.coefficientKey
+    );
+    if (new Set(mutationKeys).size !== mutationKeys.length) {
+      throw new Error('Policy returned duplicated mutation keys');
+    }
+
+    for (const key of mutationKeys) {
+      if (!targetKeys.includes(key)) {
+        throw new Error(`Policy returned unexpected mutation key ${key}`);
+      }
+    }
+  }
+
+  private validateMutation(
+    mutation: FeedbackCoefficientMutation,
+    coefficient: TenantCalibrationCoefficient
+  ): void {
+    if (!COEFFICIENT_KEY_PATTERN.test(mutation.coefficientKey)) {
+      throw new Error(`Invalid coefficient key ${mutation.coefficientKey}`);
+    }
+
+    if (
+      !this.isValidCoefficientValue(mutation.oldValue) ||
+      !this.isValidCoefficientValue(mutation.newValue) ||
+      mutation.newValue < coefficient.minValue ||
+      mutation.newValue > coefficient.maxValue
+    ) {
+      throw new Error(`Invalid coefficient value for ${mutation.coefficientKey}`);
+    }
+
+    if (
+      mutation.defaultValue !== null &&
+      (!this.isValidCoefficientValue(mutation.defaultValue) ||
+        mutation.defaultValue < coefficient.minValue ||
+        mutation.defaultValue > coefficient.maxValue)
+    ) {
+      throw new Error(
+        `Invalid default value for ${mutation.coefficientKey}`
+      );
+    }
+
+    if (
+      !Number.isInteger(mutation.oldEligibleSampleCount) ||
+      !Number.isInteger(mutation.newEligibleSampleCount) ||
+      mutation.oldEligibleSampleCount < 0 ||
+      mutation.newEligibleSampleCount < 0 ||
+      mutation.newEligibleSampleCount < mutation.oldEligibleSampleCount
+    ) {
+      throw new Error(`Invalid sample counts for ${mutation.coefficientKey}`);
+    }
+
+    if (
+      !this.isValidNonNegativeFinite(mutation.oldTotalWeight) ||
+      !this.isValidNonNegativeFinite(mutation.newTotalWeight) ||
+      mutation.newTotalWeight < mutation.oldTotalWeight
+    ) {
+      throw new Error(`Invalid weights for ${mutation.coefficientKey}`);
+    }
+
+    for (const [label, value] of [
+      ['correctionFactor', mutation.correctionFactor],
+      ['clampedCorrectionFactor', mutation.clampedCorrectionFactor],
+      ['weight', mutation.weight],
+    ] as const) {
+      if (
+        value !== null &&
+        (!Number.isFinite(value) ||
+          (label === 'weight' ? value < 0 : value <= 0))
+      ) {
+        throw new Error(`Invalid ${label} for ${mutation.coefficientKey}`);
+      }
+    }
+  }
+
+  private isValidCoefficientValue(value: number | undefined | null): boolean {
+    return typeof value === 'number' && Number.isFinite(value) && value > 0;
+  }
+
+  private isValidNonNegativeFinite(value: number): boolean {
+    return typeof value === 'number' && Number.isFinite(value) && value >= 0;
   }
 
   private async markSkipped(

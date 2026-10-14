@@ -93,6 +93,7 @@ const EXPECTED_MIGRATIONS = [
   'BaselineCurrentSchema20261014000000',
   'SeedBaselineCoefficients20261014000001',
   'AddTenantCalibrationFoundation20261014000002',
+  'AddEstimateTimestamps20261014000003',
 ];
 
 const fail = (message: string): never => {
@@ -480,7 +481,7 @@ const main = async (): Promise<void> => {
     const migrations = await targetDataSource.runMigrations({
       transaction: 'all',
     });
-    assertEqual(migrations.length, 3, 'baseline migration count');
+    assertEqual(migrations.length, 4, 'baseline migration count');
     console.log(
       `PASS migrations: applied ${migrations
         .map((migration) => migration.name)
