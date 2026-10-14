@@ -135,27 +135,33 @@ export class TasksService {
         const confidence = this.calculateConfidence(subtaskData.description);
         totalConfidence += confidence;
 
-        await this.estimatesService.create({
-          taskId: subtask.id,
-          finalEstimate: subtaskData.estimateHours,
-          source: EstimateSource.AI,
-          explanation: subtaskData.explanation,
-          confidence,
-        });
+        await this.estimatesService.create(
+          {
+            taskId: subtask.id,
+            finalEstimate: subtaskData.estimateHours,
+            source: EstimateSource.AI,
+            explanation: subtaskData.explanation,
+            confidence,
+          },
+          userId
+        );
       }
 
       // 3a. Create the aggregate estimate for the parent task (subtask sum)
       if (totalEstimate > 0) {
-        await this.estimatesService.create({
-          taskId: parentTask.id,
-          finalEstimate: totalEstimate,
-          source: EstimateSource.AI_SUBTASK_SUM,
-          explanation: `Sum of ${subtasks.length} AI-estimated subtasks.`,
-          confidence:
-            subtasks.length > 0 ? totalConfidence / subtasks.length : 0,
-          managerExplanation: estimationData.managerNote,
-          manualEstimate: createTaskDto.manualEstimate,
-        });
+        await this.estimatesService.create(
+          {
+            taskId: parentTask.id,
+            finalEstimate: totalEstimate,
+            source: EstimateSource.AI_SUBTASK_SUM,
+            explanation: `Sum of ${subtasks.length} AI-estimated subtasks.`,
+            confidence:
+              subtasks.length > 0 ? totalConfidence / subtasks.length : 0,
+            managerExplanation: estimationData.managerNote,
+            manualEstimate: createTaskDto.manualEstimate,
+          },
+          userId
+        );
       }
 
       // 3b. Compute calibrated FINAL estimate (top-down, modifiers, history)
@@ -167,42 +173,48 @@ export class TasksService {
           project,
           risksCount: risks?.length ?? 0,
         });
-      await this.estimatesService.create({
-        taskId: parentTask.id,
-        finalEstimate: calibrated.p50,
-        source: EstimateSource.FINAL,
-        confidence: calibrated.confidence,
-        explanation: `${
-          calibrated.explanation
-        }\nRange: p10=${calibrated.p10.toFixed(
-          1
-        )}h, p50=${calibrated.p50.toFixed(1)}h, p90=${calibrated.p90.toFixed(
-          1
-        )}h\nLogs:\n- ${calibrated.logs.join('\n- ')}`,
-        managerExplanation: estimationData.managerNote,
-        manualEstimate: createTaskDto.manualEstimate,
-        p10: calibrated.p10,
-        p50: calibrated.p50,
-        p90: calibrated.p90,
-        topDown: calibrated.topDown,
-        bottomUp: calibrated.bottomUp,
-        divergencePct: calibrated.divergencePct,
-        logs: calibrated.logs.join('\n'),
-      });
+      await this.estimatesService.create(
+        {
+          taskId: parentTask.id,
+          finalEstimate: calibrated.p50,
+          source: EstimateSource.FINAL,
+          confidence: calibrated.confidence,
+          explanation: `${
+            calibrated.explanation
+          }\nRange: p10=${calibrated.p10.toFixed(
+            1
+          )}h, p50=${calibrated.p50.toFixed(1)}h, p90=${calibrated.p90.toFixed(
+            1
+          )}h\nLogs:\n- ${calibrated.logs.join('\n- ')}`,
+          managerExplanation: estimationData.managerNote,
+          manualEstimate: createTaskDto.manualEstimate,
+          p10: calibrated.p10,
+          p50: calibrated.p50,
+          p90: calibrated.p90,
+          topDown: calibrated.topDown,
+          bottomUp: calibrated.bottomUp,
+          divergencePct: calibrated.divergencePct,
+          logs: calibrated.logs.join('\n'),
+        },
+        userId
+      );
     } else {
       // 3a. Create a single, non-broken-down estimate for the parent task (raw AI sum)
       if (totalEstimate > 0) {
         const confidence =
           subtasks.length > 0 ? totalConfidence / subtasks.length : 0;
-        await this.estimatesService.create({
-          taskId: parentTask.id,
-          finalEstimate: totalEstimate,
-          source: EstimateSource.AI,
-          explanation: 'AI-generated estimate without task breakdown.',
-          confidence,
-          managerExplanation: estimationData.managerNote, // Correctly map managerNote
-          manualEstimate: createTaskDto.manualEstimate,
-        });
+        await this.estimatesService.create(
+          {
+            taskId: parentTask.id,
+            finalEstimate: totalEstimate,
+            source: EstimateSource.AI,
+            explanation: 'AI-generated estimate without task breakdown.',
+            confidence,
+            managerExplanation: estimationData.managerNote, // Correctly map managerNote
+            manualEstimate: createTaskDto.manualEstimate,
+          },
+          userId
+        );
       }
 
       // 3b. Compute calibrated FINAL estimate (top-down, modifiers, history)
@@ -214,28 +226,31 @@ export class TasksService {
           project,
           risksCount: risks?.length ?? 0,
         });
-      await this.estimatesService.create({
-        taskId: parentTask.id,
-        finalEstimate: calibrated.p50,
-        source: EstimateSource.FINAL,
-        confidence: calibrated.confidence,
-        explanation: `${
-          calibrated.explanation
-        }\nRange: p10=${calibrated.p10.toFixed(
-          1
-        )}h, p50=${calibrated.p50.toFixed(1)}h, p90=${calibrated.p90.toFixed(
-          1
-        )}h\nLogs:\n- ${calibrated.logs.join('\n- ')}`,
-        managerExplanation: estimationData.managerNote,
-        manualEstimate: createTaskDto.manualEstimate,
-        p10: calibrated.p10,
-        p50: calibrated.p50,
-        p90: calibrated.p90,
-        topDown: calibrated.topDown,
-        bottomUp: calibrated.bottomUp,
-        divergencePct: calibrated.divergencePct,
-        logs: calibrated.logs.join('\n'),
-      });
+      await this.estimatesService.create(
+        {
+          taskId: parentTask.id,
+          finalEstimate: calibrated.p50,
+          source: EstimateSource.FINAL,
+          confidence: calibrated.confidence,
+          explanation: `${
+            calibrated.explanation
+          }\nRange: p10=${calibrated.p10.toFixed(
+            1
+          )}h, p50=${calibrated.p50.toFixed(1)}h, p90=${calibrated.p90.toFixed(
+            1
+          )}h\nLogs:\n- ${calibrated.logs.join('\n- ')}`,
+          managerExplanation: estimationData.managerNote,
+          manualEstimate: createTaskDto.manualEstimate,
+          p10: calibrated.p10,
+          p50: calibrated.p50,
+          p90: calibrated.p90,
+          topDown: calibrated.topDown,
+          bottomUp: calibrated.bottomUp,
+          divergencePct: calibrated.divergencePct,
+          logs: calibrated.logs.join('\n'),
+        },
+        userId
+      );
     }
 
     // 4. Return the fully populated parent task
@@ -279,7 +294,8 @@ export class TasksService {
     if (manualEstimate) {
       await this.estimatesService.createOrUpdateManualEstimate(
         id,
-        manualEstimate
+        manualEstimate,
+        userId
       );
     }
 
@@ -403,25 +419,31 @@ export class TasksService {
         const confidence = this.calculateConfidence(subtaskData.description);
         totalConfidence += confidence;
 
-        await this.estimatesService.create({
-          taskId: subtask.id,
-          finalEstimate: subtaskData.estimateHours,
-          source: EstimateSource.AI,
-          explanation: subtaskData.explanation,
-          confidence,
-        });
+        await this.estimatesService.create(
+          {
+            taskId: subtask.id,
+            finalEstimate: subtaskData.estimateHours,
+            source: EstimateSource.AI,
+            explanation: subtaskData.explanation,
+            confidence,
+          },
+          userId
+        );
       }
 
       // Create the aggregate estimate for the parent task
       if (totalEstimate > 0) {
-        await this.estimatesService.create({
-          taskId: task.id,
-          finalEstimate: totalEstimate,
-          source: EstimateSource.AI_SUBTASK_SUM,
-          explanation: `Sum of ${subtasks.length} AI-estimated subtasks after clarification.`,
-          confidence:
-            subtasks.length > 0 ? totalConfidence / subtasks.length : 0,
-        });
+        await this.estimatesService.create(
+          {
+            taskId: task.id,
+            finalEstimate: totalEstimate,
+            source: EstimateSource.AI_SUBTASK_SUM,
+            explanation: `Sum of ${subtasks.length} AI-estimated subtasks after clarification.`,
+            confidence:
+              subtasks.length > 0 ? totalConfidence / subtasks.length : 0,
+          },
+          userId
+        );
       }
 
       // And the calibrated FINAL estimate
@@ -433,32 +455,38 @@ export class TasksService {
           project,
           risksCount: risks?.length ?? 0,
         });
-      await this.estimatesService.create({
-        taskId: task.id,
-        finalEstimate: calibrated.p50,
-        source: EstimateSource.FINAL,
-        confidence: calibrated.confidence,
-        explanation: `${
-          calibrated.explanation
-        }\nRange: p10=${calibrated.p10.toFixed(
-          1
-        )}h, p50=${calibrated.p50.toFixed(1)}h, p90=${calibrated.p90.toFixed(
-          1
-        )}h\nLogs:\n- ${calibrated.logs.join('\n- ')}`,
-      });
+      await this.estimatesService.create(
+        {
+          taskId: task.id,
+          finalEstimate: calibrated.p50,
+          source: EstimateSource.FINAL,
+          confidence: calibrated.confidence,
+          explanation: `${
+            calibrated.explanation
+          }\nRange: p10=${calibrated.p10.toFixed(
+            1
+          )}h, p50=${calibrated.p50.toFixed(1)}h, p90=${calibrated.p90.toFixed(
+            1
+          )}h\nLogs:\n- ${calibrated.logs.join('\n- ')}`,
+        },
+        userId
+      );
     } else {
       // Create a single, non-broken-down estimate for the parent task
       if (totalEstimate > 0) {
         const confidence =
           subtasks.length > 0 ? totalConfidence / subtasks.length : 0;
-        await this.estimatesService.create({
-          taskId: task.id,
-          finalEstimate: totalEstimate,
-          source: EstimateSource.AI,
-          explanation:
-            'AI-generated estimate after clarification, without task breakdown.',
-          confidence,
-        });
+        await this.estimatesService.create(
+          {
+            taskId: task.id,
+            finalEstimate: totalEstimate,
+            source: EstimateSource.AI,
+            explanation:
+              'AI-generated estimate after clarification, without task breakdown.',
+            confidence,
+          },
+          userId
+        );
       }
 
       // And the calibrated FINAL estimate
@@ -470,19 +498,22 @@ export class TasksService {
           project,
           risksCount: risks?.length ?? 0,
         });
-      await this.estimatesService.create({
-        taskId: task.id,
-        finalEstimate: calibrated.p50,
-        source: EstimateSource.FINAL,
-        confidence: calibrated.confidence,
-        explanation: `${
-          calibrated.explanation
-        }\nRange: p10=${calibrated.p10.toFixed(
-          1
-        )}h, p50=${calibrated.p50.toFixed(1)}h, p90=${calibrated.p90.toFixed(
-          1
-        )}h\nLogs:\n- ${calibrated.logs.join('\n- ')}`,
-      });
+      await this.estimatesService.create(
+        {
+          taskId: task.id,
+          finalEstimate: calibrated.p50,
+          source: EstimateSource.FINAL,
+          confidence: calibrated.confidence,
+          explanation: `${
+            calibrated.explanation
+          }\nRange: p10=${calibrated.p10.toFixed(
+            1
+          )}h, p50=${calibrated.p50.toFixed(1)}h, p90=${calibrated.p90.toFixed(
+            1
+          )}h\nLogs:\n- ${calibrated.logs.join('\n- ')}`,
+        },
+        userId
+      );
     }
 
     return this.findOne(id, userId);

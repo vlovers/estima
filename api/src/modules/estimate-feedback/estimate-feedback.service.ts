@@ -1,20 +1,33 @@
 import { CreateEstimateFeedbackDto } from './dto/create-estimate-feedback.dto';
 import { EstimateFeedback } from './entities/estimate-feedback.entity';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Inject, Injectable, forwardRef } from '@nestjs/common';
+import {
+  Inject,
+  Injectable,
+  NotFoundException,
+  forwardRef,
+} from '@nestjs/common';
 import { Repository } from 'typeorm';
 import { FeedbackAnalysisService } from './feedback-analysis.service';
+import { Task } from '../tasks/entities/task.entity';
 
 @Injectable()
 export class EstimateFeedbackService {
   constructor(
     @InjectRepository(EstimateFeedback)
     private readonly feedbackRepository: Repository<EstimateFeedback>,
+    @InjectRepository(Task)
+    private readonly taskRepository: Repository<Task>,
     @Inject(forwardRef(() => FeedbackAnalysisService))
     private readonly feedbackAnalysisService: FeedbackAnalysisService,
   ) {}
 
-  async create(dto: CreateEstimateFeedbackDto): Promise<EstimateFeedback> {
+  async create(
+    dto: CreateEstimateFeedbackDto,
+    userId: string
+  ): Promise<EstimateFeedback> {
+    await this.ensureTaskOwnedByUser(dto.taskId, userId);
+
     const feedback = this.feedbackRepository.create({
       task: { id: dto.taskId },
       actualHours: dto.actualHours,
@@ -35,7 +48,28 @@ export class EstimateFeedbackService {
     return savedFeedback;
   }
 
-  async findAll(): Promise<EstimateFeedback[]> {
-    return this.feedbackRepository.find({ relations: ['task'] });
+  async findAll(userId: string): Promise<EstimateFeedback[]> {
+    return this.feedbackRepository
+      .createQueryBuilder('feedback')
+      .innerJoinAndSelect('feedback.task', 'task')
+      .innerJoin('task.project', 'project')
+      .where('project."userId" = :userId', { userId })
+      .getMany();
+  }
+
+  private async ensureTaskOwnedByUser(
+    taskId: string,
+    userId: string
+  ): Promise<void> {
+    const task = await this.taskRepository
+      .createQueryBuilder('task')
+      .innerJoin('task.project', 'project')
+      .where('task.id = :taskId', { taskId })
+      .andWhere('project."userId" = :userId', { userId })
+      .getOne();
+
+    if (!task) {
+      throw new NotFoundException(`Task with id ${taskId} not found`);
+    }
   }
 }

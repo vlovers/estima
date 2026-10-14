@@ -3,17 +3,23 @@ import { CreateEstimateDto } from './dto/create-estimate.dto';
 import { EstimateSource } from './entities/estimate.entity';
 import { Estimate } from './entities/estimate.entity';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { Repository } from 'typeorm';
+import { Task } from '../tasks/entities/task.entity';
 
 @Injectable()
 export class EstimatesService {
   constructor(
     @InjectRepository(Estimate)
-    private readonly estimateRepository: Repository<Estimate>
+    private readonly estimateRepository: Repository<Estimate>,
+    @InjectRepository(Task)
+    private readonly taskRepository: Repository<Task>
   ) {}
 
-  async create(createEstimateDto: CreateEstimateDto): Promise<Estimate> {
+  async create(
+    createEstimateDto: CreateEstimateDto,
+    userId?: string
+  ): Promise<Estimate> {
     const {
       taskId,
       manualEstimate,
@@ -30,6 +36,10 @@ export class EstimatesService {
       divergencePct,
       logs,
     } = createEstimateDto;
+
+    if (userId) {
+      await this.ensureTaskOwnedByUser(taskId, userId);
+    }
 
     const estimateData: Partial<Estimate> = {
       finalEstimate,
@@ -52,41 +62,100 @@ export class EstimatesService {
     return this.estimateRepository.save(estimate);
   }
 
-  async addManagerExplanation(estimateId: string, explanation: string) {
-    return this.estimateRepository.update(estimateId, {
+  async addManagerExplanation(
+    estimateId: string,
+    explanation: string,
+    userId: string
+  ) {
+    const result = await this.ownedUpdate(estimateId, userId, {
       managerExplanation: explanation,
     });
-  }
-
-  findAll() {
-    return this.estimateRepository.find({ relations: ['task', 'user'] });
-  }
-
-  findOne(id: string) {
-    return this.estimateRepository.findOne({
-      where: { id },
-      relations: ['task', 'user'],
-    });
-  }
-
-  async update(id: string, updateEstimateDto: UpdateEstimateDto) {
-    const result = await this.estimateRepository.update(id, updateEstimateDto);
-
     if (result.affected === 0) {
-      throw new Error(`Estimate with id ${id} not found`);
+      throw new NotFoundException(`Estimate with id ${estimateId} not found`);
+    }
+    return this.findOne(estimateId, userId);
+  }
+
+  findAll(userId: string) {
+    return this.estimateRepository
+      .createQueryBuilder('estimate')
+      .innerJoinAndSelect('estimate.task', 'task')
+      .innerJoin('task.project', 'project')
+      .where('project."userId" = :userId', { userId })
+      .getMany();
+  }
+
+  async findOne(id: string, userId: string) {
+    const estimate = await this.estimateRepository
+      .createQueryBuilder('estimate')
+      .innerJoinAndSelect('estimate.task', 'task')
+      .innerJoin('task.project', 'project')
+      .where('estimate.id = :id', { id })
+      .andWhere('project."userId" = :userId', { userId })
+      .getOne();
+
+    if (!estimate) {
+      throw new NotFoundException(`Estimate with id ${id} not found`);
     }
 
-    return this.findOne(id);
+    return estimate;
   }
 
-  async remove(id: string) {
-    return this.estimateRepository.delete(id);
+  async update(
+    id: string,
+    updateEstimateDto: UpdateEstimateDto,
+    userId: string
+  ) {
+    const { taskId, userId: _ignoredUserId, ...estimateUpdateDto } =
+      updateEstimateDto;
+    void _ignoredUserId;
+
+    if (taskId) {
+      await this.ensureTaskOwnedByUser(taskId, userId);
+    }
+
+    const result = await this.ownedUpdate(id, userId, estimateUpdateDto);
+
+    if (result.affected === 0) {
+      throw new NotFoundException(`Estimate with id ${id} not found`);
+    }
+
+    return this.findOne(id, userId);
+  }
+
+  async remove(id: string, userId: string) {
+    const result = await this.estimateRepository
+      .createQueryBuilder()
+      .delete()
+      .from(Estimate)
+      .where('id = :id', { id })
+      .andWhere(
+        `"taskId" IN (
+          SELECT task.id
+          FROM tasks task
+          INNER JOIN projects project ON project.id = task."projectId"
+          WHERE project."userId" = :userId
+        )`,
+        { userId }
+      )
+      .execute();
+
+    if (result.affected === 0) {
+      throw new NotFoundException(`Estimate with id ${id} not found`);
+    }
+
+    return result;
   }
 
   async createOrUpdateManualEstimate(
     taskId: string,
-    hours: number
+    hours: number,
+    userId?: string
   ): Promise<Estimate> {
+    if (userId) {
+      await this.ensureTaskOwnedByUser(taskId, userId);
+    }
+
     const existingEstimate = await this.estimateRepository.findOne({
       where: {
         task: { id: taskId },
@@ -104,5 +173,43 @@ export class EstimatesService {
       source: EstimateSource.MANUAL,
     });
     return this.estimateRepository.save(newEstimate);
+  }
+
+  private async ensureTaskOwnedByUser(
+    taskId: string,
+    userId: string
+  ): Promise<void> {
+    const task = await this.taskRepository
+      .createQueryBuilder('task')
+      .innerJoin('task.project', 'project')
+      .where('task.id = :taskId', { taskId })
+      .andWhere('project."userId" = :userId', { userId })
+      .getOne();
+
+    if (!task) {
+      throw new NotFoundException(`Task with id ${taskId} not found`);
+    }
+  }
+
+  private ownedUpdate(
+    estimateId: string,
+    userId: string,
+    updateData: Partial<Estimate>
+  ) {
+    return this.estimateRepository
+      .createQueryBuilder()
+      .update(Estimate)
+      .set(updateData)
+      .where('id = :estimateId', { estimateId })
+      .andWhere(
+        `"taskId" IN (
+          SELECT task.id
+          FROM tasks task
+          INNER JOIN projects project ON project.id = task."projectId"
+          WHERE project."userId" = :userId
+        )`,
+        { userId }
+      )
+      .execute();
   }
 }

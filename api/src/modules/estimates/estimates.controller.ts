@@ -17,6 +17,7 @@ import {
   Delete,
   Param,
   Patch,
+  Request,
   Body,
   Post,
   Get,
@@ -36,8 +37,8 @@ export class EstimatesController {
     type: Estimate,
   })
   @ApiResponse({ status: 400, description: 'Invalid input' })
-  create(@Body() createEstimateDto: CreateEstimateDto) {
-    return this.estimatesService.create(createEstimateDto);
+  create(@Body() createEstimateDto: CreateEstimateDto, @Request() req) {
+    return this.estimatesService.create(createEstimateDto, req.user.userId);
   }
 
   @Get()
@@ -47,16 +48,16 @@ export class EstimatesController {
     description: 'List of all estimates',
     type: [Estimate],
   })
-  findAll() {
-    return this.estimatesService.findAll();
+  findAll(@Request() req) {
+    return this.estimatesService.findAll(req.user.userId);
   }
 
   @Get(':id')
   @ApiOperation({ summary: 'Get an estimate by ID' })
   @ApiResponse({ status: 200, description: 'Estimate details', type: Estimate })
   @ApiResponse({ status: 404, description: 'Estimate not found' })
-  findOne(@Param('id', ParseUUIDPipe) id: string) {
-    return this.estimatesService.findOne(id);
+  findOne(@Param('id', ParseUUIDPipe) id: string, @Request() req) {
+    return this.estimatesService.findOne(id, req.user.userId);
   }
 
   @Patch(':id')
@@ -69,9 +70,10 @@ export class EstimatesController {
   @ApiResponse({ status: 404, description: 'Estimate not found' })
   update(
     @Param('id', ParseUUIDPipe) id: string,
-    @Body() updateEstimateDto: UpdateEstimateDto
+    @Body() updateEstimateDto: UpdateEstimateDto,
+    @Request() req
   ) {
-    return this.estimatesService.update(id, updateEstimateDto);
+    return this.estimatesService.update(id, updateEstimateDto, req.user.userId);
   }
 
   @Patch(':id/manager-explanation')
@@ -80,11 +82,13 @@ export class EstimatesController {
   @ApiResponse({ status: 404, description: 'Estimate not found' })
   addManagerExplanation(
     @Param('id', ParseUUIDPipe) id: string,
-    @Body() addManagerExplanationDto: AddManagerExplanationDto
+    @Body() addManagerExplanationDto: AddManagerExplanationDto,
+    @Request() req
   ) {
     return this.estimatesService.addManagerExplanation(
       id,
-      addManagerExplanationDto.explanation
+      addManagerExplanationDto.explanation,
+      req.user.userId
     );
   }
 
@@ -92,7 +96,7 @@ export class EstimatesController {
   @ApiOperation({ summary: 'Delete an estimate' })
   @ApiResponse({ status: 200, description: 'Estimate deleted successfully' })
   @ApiResponse({ status: 404, description: 'Estimate not found' })
-  remove(@Param('id', ParseUUIDPipe) id: string) {
-    return this.estimatesService.remove(id);
+  remove(@Param('id', ParseUUIDPipe) id: string, @Request() req) {
+    return this.estimatesService.remove(id, req.user.userId);
   }
 }
