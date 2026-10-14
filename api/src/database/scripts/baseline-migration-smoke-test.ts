@@ -28,6 +28,8 @@ const APPLICATION_TABLES = [
   'estimates',
   'estimate_feedbacks',
   'coefficients',
+  'tenant_calibration_coefficients',
+  'coefficient_change_events',
 ];
 
 const EXPECTED_COEFFICIENT_KEYS = [
@@ -53,20 +55,44 @@ const EXPECTED_CONSTRAINTS = [
   'PK_447af75b2f6025adf7f80703810',
   'PK_2746b9cae761b17717177b6debd',
   'PK_2104223992f94138c205755c2f0',
+  'PK_tenant_calibration_coefficients',
+  'PK_coefficient_change_events',
   'UQ_97672ac88f789774dd47f7c8be3',
   'UQ_bac028db857885a1d0a8cd45907',
+  'CHK_tenant_calibration_coefficients_value_bounds',
+  'CHK_tenant_calibration_coefficients_default_bounds',
+  'CHK_tenant_calibration_coefficients_sample_count',
+  'CHK_tenant_calibration_coefficients_total_weight',
+  'CHK_tenant_calibration_coefficients_version',
   'FK_361a53ae58ef7034adc3c06f09f',
   'FK_e08fca67ca8966e6b9914bf2956',
   'FK_34701b0b8d466af308ba202e4ef',
   'FK_d9d30f6971adee44bd2eba9389a',
   'FK_48723ec5670bf40c50262e7bc1c',
+  'FK_estimate_feedbacks_estimate',
+  'FK_tenant_calibration_coefficients_tenant_user',
+  'FK_coefficient_change_events_tenant_user',
+  'FK_coefficient_change_events_feedback',
 ];
 
-const EXPECTED_INDEXES = ['IDX_bac028db857885a1d0a8cd4590'];
+const EXPECTED_INDEXES = [
+  'IDX_bac028db857885a1d0a8cd4590',
+  'UQ_tenant_calibration_coefficients_tenant_key',
+  'IDX_tenant_calibration_coefficients_tenant',
+  'IDX_tenant_calibration_coefficients_key',
+  'UQ_coefficient_change_events_feedback_key',
+  'IDX_coefficient_change_events_tenant',
+  'IDX_coefficient_change_events_coefficient_key',
+  'IDX_coefficient_change_events_feedback',
+  'IDX_estimate_feedbacks_task_idempotency_key',
+  'IDX_estimate_feedbacks_estimate_id',
+  'IDX_estimate_feedbacks_processing_status',
+];
 
 const EXPECTED_MIGRATIONS = [
   'BaselineCurrentSchema20261014000000',
   'SeedBaselineCoefficients20261014000001',
+  'AddTenantCalibrationFoundation20261014000002',
 ];
 
 const fail = (message: string): never => {
@@ -120,8 +146,7 @@ const readConfig = (): SmokeConfig => {
 
   return {
     marker: requireEnv('MIGRATION_VALIDATION_TARGET'),
-    containerName:
-      process.env.MIGRATION_TEST_CONTAINER ?? EXPECTED_CONTAINER,
+    containerName: process.env.MIGRATION_TEST_CONTAINER ?? EXPECTED_CONTAINER,
     host: requireEnv('MIGRATION_TEST_HOST'),
     port: Number(requireEnv('MIGRATION_TEST_PORT')),
     username: requireEnv('MIGRATION_TEST_USERNAME'),
@@ -172,7 +197,9 @@ const assertFailClosedConfig = (config: SmokeConfig): void => {
 
   for (const value of testValues) {
     if (developmentValues.includes(value)) {
-      fail(`test configuration overlaps with POSTGRES_* development value: ${value}`);
+      fail(
+        `test configuration overlaps with POSTGRES_* development value: ${value}`
+      );
     }
   }
 };
@@ -195,12 +222,13 @@ const assertDockerIsolation = (config: SmokeConfig): void => {
   const ports = container.NetworkSettings?.Ports?.['5432/tcp'] ?? [];
   const hasExpectedPort = ports.some(
     (binding: { HostIp?: string; HostPort?: string }) =>
-      binding.HostPort === String(config.port) &&
-      binding.HostIp === config.host
+      binding.HostPort === String(config.port) && binding.HostIp === config.host
   );
 
   if (!hasExpectedPort) {
-    fail(`Docker container does not publish 5432/tcp to ${config.host}:${config.port}`);
+    fail(
+      `Docker container does not publish 5432/tcp to ${config.host}:${config.port}`
+    );
   }
 };
 
@@ -250,7 +278,9 @@ const queryNames = async (
   return rows.map((row: { name: string }) => row.name).sort();
 };
 
-const assertInitialTargetIsEmpty = async (dataSource: DataSource): Promise<void> => {
+const assertInitialTargetIsEmpty = async (
+  dataSource: DataSource
+): Promise<void> => {
   const existingTables = await queryNames(
     dataSource,
     `
@@ -265,7 +295,11 @@ const assertInitialTargetIsEmpty = async (dataSource: DataSource): Promise<void>
   );
 
   if (existingTables.length > 0) {
-    fail(`target database already has application tables: ${existingTables.join(', ')}`);
+    fail(
+      `target database already has application tables: ${existingTables.join(
+        ', '
+      )}`
+    );
   }
 };
 
@@ -283,9 +317,9 @@ const createFreshTargetDatabase = async (
   }
 
   await adminDataSource.query(
-    `CREATE DATABASE ${quoteIdentifier(config.targetDatabase)} OWNER ${quoteIdentifier(
-      config.username
-    )}`
+    `CREATE DATABASE ${quoteIdentifier(
+      config.targetDatabase
+    )} OWNER ${quoteIdentifier(config.username)}`
   );
 };
 
@@ -372,14 +406,16 @@ const verifyCoefficientKeys = async (dataSource: DataSource): Promise<void> => {
 
   if (keys.length !== 13 || missing.length > 0 || unexpected.length > 0) {
     fail(
-      `coefficient keys mismatch; missing=${missing.join(', ') || '<none>'}; unexpected=${
-        unexpected.join(', ') || '<none>'
-      }`
+      `coefficient keys mismatch; missing=${
+        missing.join(', ') || '<none>'
+      }; unexpected=${unexpected.join(', ') || '<none>'}`
     );
   }
 };
 
-const verifyMigrationHistory = async (dataSource: DataSource): Promise<void> => {
+const verifyMigrationHistory = async (
+  dataSource: DataSource
+): Promise<void> => {
   const migrationNames = await queryNames(
     dataSource,
     `SELECT name FROM "migrations" ORDER BY timestamp`,
@@ -406,9 +442,9 @@ const verifyNoSchemaDiff = async (dataSource: DataSource): Promise<void> => {
 
   if (upQueries.length > 0 || downQueries.length > 0) {
     fail(
-      `entity metadata schema diff is not empty; up=${upQueries.length}, down=${downQueries.length}\n${upQueries.join(
-        '\n'
-      )}`
+      `entity metadata schema diff is not empty; up=${upQueries.length}, down=${
+        downQueries.length
+      }\n${upQueries.join('\n')}`
     );
   }
 };
@@ -424,7 +460,9 @@ const main = async (): Promise<void> => {
 
   try {
     await createFreshTargetDatabase(adminDataSource, config);
-    console.log(`PASS setup: created fresh target database ${config.targetDatabase}`);
+    console.log(
+      `PASS setup: created fresh target database ${config.targetDatabase}`
+    );
   } finally {
     await adminDataSource.destroy();
   }
@@ -442,13 +480,15 @@ const main = async (): Promise<void> => {
     const migrations = await targetDataSource.runMigrations({
       transaction: 'all',
     });
-    assertEqual(migrations.length, 2, 'baseline migration count');
+    assertEqual(migrations.length, 3, 'baseline migration count');
     console.log(
-      `PASS migrations: applied ${migrations.map((migration) => migration.name).join(', ')}`
+      `PASS migrations: applied ${migrations
+        .map((migration) => migration.name)
+        .join(', ')}`
     );
 
     await verifyTables(targetDataSource);
-    console.log('PASS schema: all six application tables exist');
+    console.log('PASS schema: all eight application tables exist');
 
     await verifyConstraintsAndIndexes(targetDataSource);
     console.log('PASS schema: expected constraints and indexes exist');
@@ -463,7 +503,9 @@ const main = async (): Promise<void> => {
       transaction: 'all',
     });
     assertEqual(secondRun.length, 0, 'second migration run count');
-    console.log('PASS idempotence: second migration run had no pending migrations');
+    console.log(
+      'PASS idempotence: second migration run had no pending migrations'
+    );
 
     await verifyNoSchemaDiff(targetDataSource);
     console.log('PASS metadata: TypeORM entity metadata has no schema diff');

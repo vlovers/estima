@@ -19,7 +19,7 @@ export class EstimateFeedbackService {
     @InjectRepository(Task)
     private readonly taskRepository: Repository<Task>,
     @Inject(forwardRef(() => FeedbackAnalysisService))
-    private readonly feedbackAnalysisService: FeedbackAnalysisService,
+    private readonly feedbackAnalysisService: FeedbackAnalysisService
   ) {}
 
   async create(
@@ -29,6 +29,7 @@ export class EstimateFeedbackService {
     await this.ensureTaskOwnedByUser(dto.taskId, userId);
 
     const feedback = this.feedbackRepository.create({
+      taskId: dto.taskId,
       task: { id: dto.taskId },
       actualHours: dto.actualHours,
       rating: dto.rating,
@@ -40,10 +41,12 @@ export class EstimateFeedbackService {
     const savedFeedback = await this.feedbackRepository.save(feedback);
 
     // Trigger analysis asynchronously
-    this.feedbackAnalysisService.analyzeFeedback(savedFeedback).catch(error => {
-      // Log error but don't block the response
-      console.error('Error during feedback analysis:', error);
-    });
+    this.feedbackAnalysisService
+      .analyzeFeedback(savedFeedback)
+      .catch((error) => {
+        // Log error but don't block the response
+        console.error('Error during feedback analysis:', error);
+      });
 
     return savedFeedback;
   }

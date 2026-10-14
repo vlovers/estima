@@ -62,11 +62,22 @@ these rows, in order:
 
 1. `BaselineCurrentSchema20261014000000`
 2. `SeedBaselineCoefficients20261014000001`
+3. `AddTenantCalibrationFoundation20261014000002`
 
 Startup also checks that baseline coefficient seed keys exist and that TypeORM
 entity metadata has no pending schema SQL. If legacy migration rows, missing
 baseline rows, unexpected extra rows, missing seed data, or metadata drift are
 found, the API refuses to start.
+
+## Current forward migrations
+
+`AddTenantCalibrationFoundation20261014000002` adds the database foundation for
+tenant-scoped calibration without changing the existing user-owned tenant model.
+It creates `tenant_calibration_coefficients` for per-user coefficient state,
+`coefficient_change_events` for immutable audit history, and nullable feedback
+processing metadata on `estimate_feedbacks`. Existing feedback rows remain valid
+because new feedback columns are nullable except `processingStatus`, which has a
+`pending` default. The migration does not mutate global `coefficients` data.
 
 ## Future forward migrations
 

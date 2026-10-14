@@ -98,7 +98,9 @@ const countRows = async (
   dataSource: DataSource,
   tableName: string
 ): Promise<number> => {
-  const [row] = await dataSource.query(`SELECT count(*)::int AS count FROM "${tableName}"`);
+  const [row] = await dataSource.query(
+    `SELECT count(*)::int AS count FROM "${tableName}"`
+  );
   return Number(row.count);
 };
 
@@ -109,7 +111,10 @@ const coefficientSnapshot = async (
     `SELECT "key", "value" FROM "coefficients" ORDER BY "key"`
   );
   return Object.fromEntries(
-    rows.map((row: { key: string; value: number }) => [row.key, Number(row.value)])
+    rows.map((row: { key: string; value: number }) => [
+      row.key,
+      Number(row.value),
+    ])
   );
 };
 
@@ -154,6 +159,7 @@ const prepareDatabase = async (
       expect(migrations.map((migration) => migration.name)).toEqual([
         'BaselineCurrentSchema20261014000000',
         'SeedBaselineCoefficients20261014000001',
+        'AddTenantCalibrationFoundation20261014000002',
       ]);
     }
   } finally {
@@ -336,6 +342,123 @@ describe('Runtime database safety and tenant isolation (PostgreSQL integration)'
     };
   };
 
+  it('creates tenant calibration foundation schema with expected constraints and indexes', async () => {
+    const tableRows = await dataSource.query(`
+      SELECT table_name AS name
+      FROM information_schema.tables
+      WHERE table_schema = 'public'
+        AND table_name IN ('tenant_calibration_coefficients', 'coefficient_change_events')
+      ORDER BY table_name
+    `);
+    expect(tableRows.map((row: { name: string }) => row.name)).toEqual([
+      'coefficient_change_events',
+      'tenant_calibration_coefficients',
+    ]);
+
+    const constraintRows = await dataSource.query(
+      `
+        SELECT conname AS name
+        FROM pg_constraint
+        WHERE connamespace = 'public'::regnamespace
+          AND conname = ANY($1)
+        ORDER BY conname
+      `,
+      [
+        [
+          'FK_tenant_calibration_coefficients_tenant_user',
+          'FK_coefficient_change_events_tenant_user',
+          'FK_coefficient_change_events_feedback',
+          'FK_estimate_feedbacks_estimate',
+          'CHK_tenant_calibration_coefficients_value_bounds',
+          'CHK_tenant_calibration_coefficients_default_bounds',
+          'CHK_tenant_calibration_coefficients_sample_count',
+          'CHK_tenant_calibration_coefficients_total_weight',
+          'CHK_tenant_calibration_coefficients_version',
+        ],
+      ]
+    );
+    expect(constraintRows.map((row: { name: string }) => row.name)).toEqual([
+      'CHK_tenant_calibration_coefficients_default_bounds',
+      'CHK_tenant_calibration_coefficients_sample_count',
+      'CHK_tenant_calibration_coefficients_total_weight',
+      'CHK_tenant_calibration_coefficients_value_bounds',
+      'CHK_tenant_calibration_coefficients_version',
+      'FK_coefficient_change_events_feedback',
+      'FK_coefficient_change_events_tenant_user',
+      'FK_estimate_feedbacks_estimate',
+      'FK_tenant_calibration_coefficients_tenant_user',
+    ]);
+
+    const indexRows = await dataSource.query(
+      `
+        SELECT indexname AS name, indexdef AS definition
+        FROM pg_indexes
+        WHERE schemaname = 'public'
+          AND indexname = ANY($1)
+        ORDER BY indexname
+      `,
+      [
+        [
+          'UQ_tenant_calibration_coefficients_tenant_key',
+          'UQ_coefficient_change_events_feedback_key',
+          'IDX_estimate_feedbacks_task_idempotency_key',
+          'IDX_estimate_feedbacks_estimate_id',
+          'IDX_estimate_feedbacks_processing_status',
+        ],
+      ]
+    );
+    expect(indexRows.map((row: { name: string }) => row.name)).toEqual([
+      'IDX_estimate_feedbacks_estimate_id',
+      'IDX_estimate_feedbacks_processing_status',
+      'IDX_estimate_feedbacks_task_idempotency_key',
+      'UQ_coefficient_change_events_feedback_key',
+      'UQ_tenant_calibration_coefficients_tenant_key',
+    ]);
+    expect(
+      indexRows.find(
+        (row: { name: string }) =>
+          row.name === 'IDX_estimate_feedbacks_task_idempotency_key'
+      )?.definition
+    ).toContain('WHERE ("idempotencyKey" IS NOT NULL)');
+
+    const feedbackColumnRows = await dataSource.query(
+      `
+        SELECT column_name AS name, is_nullable AS nullable, column_default AS default
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'estimate_feedbacks'
+          AND column_name = ANY($1)
+        ORDER BY column_name
+      `,
+      [
+        [
+          'estimateId',
+          'idempotencyKey',
+          'estimatedHoursSnapshot',
+          'processingStatus',
+          'processedAt',
+          'processingError',
+          'algorithmVersion',
+        ],
+      ]
+    );
+    expect(feedbackColumnRows).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: 'processingStatus',
+          nullable: 'NO',
+          default: "'pending'::estimate_feedbacks_processingstatus_enum",
+        }),
+        expect.objectContaining({ name: 'estimateId', nullable: 'YES' }),
+        expect.objectContaining({ name: 'idempotencyKey', nullable: 'YES' }),
+        expect.objectContaining({
+          name: 'estimatedHoursSnapshot',
+          nullable: 'YES',
+        }),
+      ])
+    );
+  });
+
   it('registers, logs in, refreshes, logs out, and protects endpoints', async () => {
     userA = await registerUser('phase3-a@example.com', 'password123');
     userB = await registerUser('phase3-b@example.com', 'password123');
@@ -427,17 +550,17 @@ describe('Runtime database safety and tenant isolation (PostgreSQL integration)'
       .get('/api/projects')
       .set(authHeader(userA))
       .expect(200);
-    expect(projectsA.body.map((project: { id: string }) => project.id)).toEqual([
-      resourcesA.projectId,
-    ]);
+    expect(projectsA.body.map((project: { id: string }) => project.id)).toEqual(
+      [resourcesA.projectId]
+    );
 
     const projectsB = await request(app.getHttpServer())
       .get('/api/projects')
       .set(authHeader(userB))
       .expect(200);
-    expect(projectsB.body.map((project: { id: string }) => project.id)).toEqual([
-      resourcesB.projectId,
-    ]);
+    expect(projectsB.body.map((project: { id: string }) => project.id)).toEqual(
+      [resourcesB.projectId]
+    );
   });
 
   it('prevents user A from reading, updating, deleting, or modifying user B resources', async () => {
@@ -541,7 +664,9 @@ describe('Runtime database safety and tenant isolation (PostgreSQL integration)'
 
     expect(await countRows(dataSource, 'projects')).toBe(beforeCounts.projects);
     expect(await countRows(dataSource, 'tasks')).toBe(beforeCounts.tasks);
-    expect(await countRows(dataSource, 'estimates')).toBe(beforeCounts.estimates);
+    expect(await countRows(dataSource, 'estimates')).toBe(
+      beforeCounts.estimates
+    );
     expect(await countRows(dataSource, 'estimate_feedbacks')).toBe(
       beforeCounts.feedback
     );

@@ -7,11 +7,14 @@ const REQUIRED_APPLICATION_TABLES = [
   'estimates',
   'estimate_feedbacks',
   'coefficients',
+  'tenant_calibration_coefficients',
+  'coefficient_change_events',
 ];
 
 const REQUIRED_MIGRATIONS = [
   'BaselineCurrentSchema20261014000000',
   'SeedBaselineCoefficients20261014000001',
+  'AddTenantCalibrationFoundation20261014000002',
 ];
 
 const LEGACY_MIGRATIONS = [
@@ -101,9 +104,9 @@ export const assertRuntimeDatabaseSchema = async (
     throw new Error(
       `Database schema is not baseline-managed. Expected exact baseline TypeORM migration history: ${REQUIRED_MIGRATIONS.join(
         ', '
-      )}. Actual history: ${
-        migrationNames.join(', ') || '<empty>'
-      }. Missing: ${missingMigrations.join(', ') || '<none>'}. Unexpected: ${
+      )}. Actual history: ${migrationNames.join(', ') || '<empty>'}. Missing: ${
+        missingMigrations.join(', ') || '<none>'
+      }. Unexpected: ${
         unexpectedMigrations.join(', ') || '<none>'
       }. New installations must run the baseline migration chain; existing databases require migration reconciliation before API startup.`
     );

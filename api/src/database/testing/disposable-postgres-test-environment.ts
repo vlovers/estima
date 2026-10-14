@@ -13,8 +13,7 @@ export type DisposablePostgresConfig = {
   targetDatabase: string;
 };
 
-export const MIGRATION_TEST_MARKER =
-  'disposable-postgres-migration-validation';
+export const MIGRATION_TEST_MARKER = 'disposable-postgres-migration-validation';
 export const MIGRATION_TEST_CONTAINER = 'ai-estimates-migration-test-db';
 export const MIGRATION_TEST_HOST = '127.0.0.1';
 export const MIGRATION_TEST_PORT = 55432;
@@ -69,7 +68,8 @@ export const readDisposablePostgresConfig = (
   defaultTargetDatabase: string
 ): DisposablePostgresConfig => ({
   marker: requireEnv('MIGRATION_VALIDATION_TARGET'),
-  containerName: process.env.MIGRATION_TEST_CONTAINER ?? MIGRATION_TEST_CONTAINER,
+  containerName:
+    process.env.MIGRATION_TEST_CONTAINER ?? MIGRATION_TEST_CONTAINER,
   host: requireEnv('MIGRATION_TEST_HOST'),
   port: Number(requireEnv('MIGRATION_TEST_PORT')),
   username: requireEnv('MIGRATION_TEST_USERNAME'),
@@ -125,7 +125,9 @@ export const assertDisposablePostgresConfig = (
 
   for (const value of testValues) {
     if (developmentValues.includes(value)) {
-      fail(`test configuration overlaps with POSTGRES_* development value: ${value}`);
+      fail(
+        `test configuration overlaps with POSTGRES_* development value: ${value}`
+      );
     }
   }
 };
@@ -150,12 +152,13 @@ export const assertDisposableDockerIsolation = (
   const ports = container.NetworkSettings?.Ports?.['5432/tcp'] ?? [];
   const hasExpectedPort = ports.some(
     (binding: { HostIp?: string; HostPort?: string }) =>
-      binding.HostPort === String(config.port) &&
-      binding.HostIp === config.host
+      binding.HostPort === String(config.port) && binding.HostIp === config.host
   );
 
   if (!hasExpectedPort) {
-    fail(`Docker container does not publish 5432/tcp to ${config.host}:${config.port}`);
+    fail(
+      `Docker container does not publish 5432/tcp to ${config.host}:${config.port}`
+    );
   }
 };
 
@@ -214,9 +217,9 @@ export const createFreshDatabase = async (
   }
 
   await adminDataSource.query(
-    `CREATE DATABASE ${quoteIdentifier(config.targetDatabase)} OWNER ${quoteIdentifier(
-      config.username
-    )}`
+    `CREATE DATABASE ${quoteIdentifier(
+      config.targetDatabase
+    )} OWNER ${quoteIdentifier(config.username)}`
   );
 };
 
@@ -239,16 +242,28 @@ export const verifyTargetIdentity = async (
 export const verifyNoApplicationTables = async (
   dataSource: DataSource
 ): Promise<void> => {
-  const rows = await dataSource.query(`
+  const rows = await dataSource.query(
+    `
     SELECT table_name AS name
     FROM information_schema.tables
     WHERE table_schema = 'public'
       AND table_type = 'BASE TABLE'
       AND table_name = ANY($1)
     ORDER BY table_name
-  `, [
-    ['users', 'projects', 'tasks', 'estimates', 'estimate_feedbacks', 'coefficients'],
-  ]);
+  `,
+    [
+      [
+        'users',
+        'projects',
+        'tasks',
+        'estimates',
+        'estimate_feedbacks',
+        'coefficients',
+        'tenant_calibration_coefficients',
+        'coefficient_change_events',
+      ],
+    ]
+  );
 
   if (rows.length > 0) {
     fail(
