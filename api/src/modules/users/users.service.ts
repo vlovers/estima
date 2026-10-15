@@ -79,6 +79,13 @@ export class UsersService {
     return this.findOne(id);
   }
 
+  async setRefreshToken(id: string, tokenHash: string): Promise<void> {
+    const result = await this.userRepository.update(id, { refreshToken: tokenHash });
+    if (result.affected === 0) {
+      throw new NotFoundException(`User with id ${id} not found`);
+    }
+  }
+
   async clearRefreshToken(id: string): Promise<{ success: true }> {
     const result = await this.userRepository.update(id, { refreshToken: null });
     if (result.affected === 0) {
