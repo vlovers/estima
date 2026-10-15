@@ -602,7 +602,14 @@ describe('Runtime database safety and tenant isolation (PostgreSQL integration)'
       .expect(200)
       .expect((response) => {
         expect(response.body.accessToken).toEqual(expect.any(String));
-        expect(response.body.refreshToken).toEqual(expect.any(String));
+        expect(response.body).toEqual({ accessToken: expect.any(String) });
+        expect(response.body).not.toHaveProperty('refreshToken');
+        const replacement = firstCookie(response.headers['set-cookie']);
+        expect(replacement).not.toBe(userA.refreshCookie);
+        expect(JSON.stringify(response.body)).not.toContain(
+          replacement.split(';')[0].slice('refreshToken='.length)
+        );
+        userA.refreshCookie = replacement;
       });
 
     const projectCountBefore = await countRows(dataSource, 'projects');
