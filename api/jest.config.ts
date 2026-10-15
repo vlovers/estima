@@ -1,12 +1,14 @@
-import { fileURLToPath } from 'node:url';
-
-const transformerPath = fileURLToPath(new URL('./jest-transformer.cjs', import.meta.url));
-
 export default {
   displayName: 'api',
+  preset: 'ts-jest',
   testEnvironment: 'node',
   transform: {
-    '^.+\\.[tj]s$': transformerPath,
+    '^.+\\.[tj]s$': [
+      'ts-jest',
+      {
+        tsconfig: '<rootDir>/api/tsconfig.spec.json',
+      },
+    ],
   },
   moduleFileExtensions: ['ts', 'js', 'html'],
   rootDir: '..',
