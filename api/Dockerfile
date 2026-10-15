@@ -1,16 +1,17 @@
 # Bun for dependency installation, build and application runtime.
-FROM oven/bun:1.3.2-alpine AS deps
+FROM oven/bun:1.3.2 AS deps
 WORKDIR /usr/src/app
 COPY package.json bun.lock ./
 RUN bun install --frozen-lockfile --ignore-scripts
 
-FROM oven/bun:1.3.2-alpine AS builder
+FROM node:24-bookworm-slim AS builder
+COPY --from=deps /usr/local/bin/bun /usr/local/bin/bun
 WORKDIR /usr/src/app
 COPY --from=deps /usr/src/app/node_modules ./node_modules
 COPY . .
 RUN bun run build:api
 
-FROM oven/bun:1.3.2-alpine AS production
+FROM oven/bun:1.3.2 AS production
 ENV NODE_ENV=production
 WORKDIR /usr/src/app
 COPY --from=builder /usr/src/app/dist/api ./
