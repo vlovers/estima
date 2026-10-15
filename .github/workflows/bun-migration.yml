@@ -42,8 +42,10 @@ jobs:
       - name: Verify native bcrypt
         run: bun -e "const bcrypt = require('bcrypt'); const hash = bcrypt.hashSync('test', 4); if (!bcrypt.compareSync('test', hash)) process.exit(1)"
       - name: Lint
+        timeout-minutes: 5
         run: bun run lint
       - name: Unit tests
+        timeout-minutes: 8
         run: bun run test -- --parallel=1
       - name: Build API
         run: bun run build:api
