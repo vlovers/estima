@@ -7,13 +7,14 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { User } from './entities/user.entity';
-import { Repository } from 'typeorm';
-import * as bcrypt from 'bcrypt';
+import { QueryFailedError, Repository } from 'typeorm';
+import {
+  hashPassword,
+  verifyPassword,
+  canUpgradeLegacyPassword,
+} from '../auth/password-hashing';
 
-export type SafeUser = Omit<
-  User,
-  'password' | 'refreshToken' | 'projects'
->;
+export type SafeUser = Omit<User, 'password' | 'refreshToken' | 'projects'>;
 
 @Injectable()
 export class UsersService {
@@ -38,8 +39,19 @@ export class UsersService {
       email,
       password: hashedPassword,
     });
-    const inserted = await this.userRepository.insert(user);
-    user.id = inserted.identifiers[0].id;
+    try {
+      const inserted = await this.userRepository.insert(user);
+      user.id = inserted.identifiers[0].id;
+    } catch (error) {
+      if (
+        error instanceof QueryFailedError &&
+        error.driverError?.code === '23505' &&
+        error.driverError?.constraint === 'UQ_97672ac88f789774dd47f7c8be3'
+      ) {
+        throw new ConflictException('User with this email already exists');
+      }
+      throw error;
+    }
     return this.toSafeUser(user);
   }
 
@@ -77,6 +89,34 @@ export class UsersService {
     const updateData = await this.prepareUserUpdate(updateUserDto);
     await this.userRepository.update(id, updateData);
     return this.findOne(id);
+  }
+
+  async rotateRefreshToken(
+    id: string,
+    expected: string,
+    replacement: string
+  ): Promise<boolean> {
+    const result = await this.userRepository.update(
+      { id, refreshToken: expected },
+      { refreshToken: replacement }
+    );
+    return result.affected === 1;
+  }
+
+  async verifyUserPassword(user: User, candidate: string): Promise<boolean> {
+    if (!(await verifyPassword(candidate, user.password))) return false;
+    if (canUpgradeLegacyPassword(candidate, user.password)) {
+      const upgraded = await hashPassword(candidate);
+      const result = await this.userRepository.update(
+        { id: user.id, password: user.password },
+        { password: upgraded }
+      );
+      if (result.affected !== 1) {
+        const current = await this.findOne(user.id);
+        return !!current && verifyPassword(candidate, current.password);
+      }
+    }
+    return true;
   }
 
   async clearRefreshToken(id: string): Promise<{ success: true }> {
@@ -164,7 +204,7 @@ export class UsersService {
   }
 
   private hashPassword(password: string): Promise<string> {
-    return bcrypt.hash(password, 10);
+    return hashPassword(password);
   }
 
   private toSafeUser(user: User): SafeUser {
