@@ -44,11 +44,16 @@ jobs:
         run: bun install --frozen-lockfile --ignore-scripts
       - name: Verify native bcrypt
         run: bun -e "const bcrypt = require('bcrypt'); const hash = bcrypt.hashSync('test', 4); if (!bcrypt.compareSync('test', hash)) process.exit(1)"
+      - name: Restore Nx Linux native binary
+        timeout-minutes: 3
+        run: |
+          bun add --optional @nx/nx-linux-x64-gnu@21.3.2
+          test -d node_modules/@nx/nx-linux-x64-gnu
+          ls -la node_modules/@nx/nx-linux-x64-gnu
       - name: Diagnose Nx native loading
         timeout-minutes: 2
         run: |
           echo "Inspect native Nx binary packages"
-          ls -la node_modules/nx/native || true
           ls -la node_modules/@nx/nx-linux-x64-gnu || true
           echo "Check Nx native import without postinstall"
           timeout 35s node -e "require('./node_modules/nx/src/native'); console.log('Nx native loaded successfully')"
