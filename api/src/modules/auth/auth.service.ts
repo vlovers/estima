@@ -2,7 +2,7 @@ import { ForbiddenException, Injectable } from '@nestjs/common';
 import { UsersService } from '../users/users.service';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
-import { randomUUID } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 import { CreateUserDto } from '../users/dto/create-user.dto';
 import { ConfigService } from '@nestjs/config';
 import {
@@ -51,10 +51,10 @@ export class AuthService {
     if (!user || !user.refreshToken) {
       throw new ForbiddenException('Access Denied');
     }
-    const refreshTokenMatches = await bcrypt.compare(
-      refreshToken,
-      user.refreshToken
-    );
+    const storedHash = user.refreshToken;
+    const refreshTokenMatches = storedHash.startsWith('v2:')
+      ? await bcrypt.compare(this.digestRefreshToken(refreshToken), storedHash.slice(3))
+      : await bcrypt.compare(refreshToken, storedHash);
     if (!refreshTokenMatches) throw new ForbiddenException('Access Denied');
     const tokens = await this.getTokens(user.id, user.email);
     await this.updateRefreshToken(user.id, tokens.refreshToken);
@@ -62,8 +62,15 @@ export class AuthService {
   }
 
   async updateRefreshToken(userId: string, refreshToken: string) {
-    const hashedRefreshToken = await bcrypt.hash(refreshToken, 10);
+    const hashedRefreshToken =
+      'v2:' + (await bcrypt.hash(this.digestRefreshToken(refreshToken), 10));
     await this.usersService.setRefreshToken(userId, hashedRefreshToken);
+  }
+
+  // bcrypt truncates raw inputs at 72 bytes; JWT differences (e.g. jti)
+  // can occur after that boundary, so digest the *whole* token first.
+  private digestRefreshToken(token: string): string {
+    return createHash('sha256').update(token).digest('hex');
   }
 
   async getTokens(userId: string, email: string) {
