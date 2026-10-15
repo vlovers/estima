@@ -1,10 +1,13 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource, EntityManager, In } from 'typeorm';
 import { CoefficientChangeEvent } from '../calibration/entities/coefficient-change-event.entity';
 import { Coefficient } from '../calibration/entities/coefficient.entity';
 import { TenantCalibrationCoefficient } from '../calibration/entities/tenant-calibration-coefficient.entity';
-import { Estimate, EstimateSource } from '../estimates/entities/estimate.entity';
+import {
+  Estimate,
+  EstimateSource,
+} from '../estimates/entities/estimate.entity';
 import { Project } from '../projects/entities/project.entity';
 import { Task } from '../tasks/entities/task.entity';
 import {
@@ -14,7 +17,8 @@ import {
 import {
   FeedbackCoefficientMutation,
   FeedbackCalibrationPolicyResult,
-  NoLearningFeedbackCalibrationPolicy,
+  FEEDBACK_CALIBRATION_POLICY,
+  FeedbackCalibrationPolicy,
 } from './feedback-calibration-policy';
 
 export type FeedbackProcessingOptions = {
@@ -44,7 +48,8 @@ export class FeedbackCalibrationProcessor {
   constructor(
     @InjectDataSource()
     private readonly dataSource: DataSource,
-    private readonly policy: NoLearningFeedbackCalibrationPolicy
+    @Inject(FEEDBACK_CALIBRATION_POLICY)
+    private readonly policy: FeedbackCalibrationPolicy
   ) {}
 
   async processFeedback(
@@ -104,7 +109,16 @@ export class FeedbackCalibrationProcessor {
         manager,
         feedback,
         'invalid_estimated_hours_snapshot',
-        'no-learning-pr3.3'
+        this.policy.algorithmVersion
+      );
+    }
+
+    if (!task.experienceLevel || !project.complexity) {
+      return this.markSkipped(
+        manager,
+        feedback,
+        'missing_required_calibration_context',
+        this.policy.algorithmVersion
       );
     }
 
@@ -119,7 +133,7 @@ export class FeedbackCalibrationProcessor {
         manager,
         feedback,
         'no_target_coefficients',
-        'no-learning-pr3.3'
+        this.policy.algorithmVersion
       );
     }
 
@@ -132,7 +146,7 @@ export class FeedbackCalibrationProcessor {
         manager,
         feedback,
         `unknown_coefficient_keys:${unknownTargetKeys.join(',')}`,
-        'no-learning-pr3.3'
+        this.policy.algorithmVersion
       );
     }
 
@@ -242,9 +256,7 @@ export class FeedbackCalibrationProcessor {
       keys.add(`complexity.${tag}`);
     }
 
-    return [...keys]
-      .filter((key) => COEFFICIENT_KEY_PATTERN.test(key))
-      .sort();
+    return [...keys].sort();
   }
 
   private async findUnknownCoefficientKeys(
@@ -322,7 +334,9 @@ export class FeedbackCalibrationProcessor {
 
     return new Map(
       coefficients
-        .filter((coefficient) => this.isValidCoefficientValue(coefficient.value))
+        .filter((coefficient) =>
+          this.isValidCoefficientValue(coefficient.value)
+        )
         .map((coefficient) => [coefficient.key, coefficient.value])
     );
   }
@@ -332,8 +346,12 @@ export class FeedbackCalibrationProcessor {
     feedback: EstimateFeedback,
     tenantUserId: string,
     policyResult: FeedbackCalibrationPolicyResult,
-    lockedCoefficients?: TenantCalibrationCoefficient[]
+    lockedCoefficients: TenantCalibrationCoefficient[]
   ): Promise<EstimateFeedback> {
+    const lockedByKey = new Map(
+      lockedCoefficients.map((coefficient) => [coefficient.key, coefficient])
+    );
+    this.validatePolicyResult(policyResult, lockedByKey, tenantUserId);
     if (policyResult.skipReason) {
       return this.markSkipped(
         manager,
@@ -342,14 +360,6 @@ export class FeedbackCalibrationProcessor {
         policyResult.algorithmVersion
       );
     }
-
-    const lockedByKey = new Map(
-      (lockedCoefficients ?? []).map((coefficient) => [
-        coefficient.key,
-        coefficient,
-      ])
-    );
-    this.validatePolicyResult(policyResult, lockedByKey);
 
     if (policyResult.mutations.length === 0) {
       return this.markSkipped(
@@ -364,65 +374,54 @@ export class FeedbackCalibrationProcessor {
       TenantCalibrationCoefficient
     );
     const eventRepository = manager.getRepository(CoefficientChangeEvent);
-    let appliedMutations = 0;
 
     for (const mutation of policyResult.mutations) {
-      if (mutation.oldValue === mutation.newValue) {
-        continue;
-      }
-
       const coefficient = lockedByKey.get(mutation.coefficientKey);
-      if (!coefficient) {
+      if (!coefficient)
         throw new Error(
-          `Policy returned unlocked coefficient key ${mutation.coefficientKey}`
+          `Missing locked coefficient ${mutation.coefficientKey}`
         );
-      }
-      if (coefficient.value !== mutation.oldValue) {
-        throw new Error(
-          `Policy old value mismatch for ${mutation.coefficientKey}`
-        );
-      }
-      this.validateMutation(mutation, coefficient);
-      await coefficientRepository.update(
+      const updated = await coefficientRepository.update(
         {
           tenantUserId,
           key: mutation.coefficientKey,
+          version: coefficient.version,
         },
         {
           value: mutation.newValue,
           eligibleSampleCount: mutation.newEligibleSampleCount,
           totalWeight: mutation.newTotalWeight,
+          ewmaLogError: mutation.newEwmaLogError,
           lastFeedbackId: feedback.id,
           version: () => '"version" + 1',
         }
       );
 
-      await eventRepository.insert({
-        tenantUserId,
-        feedbackId: feedback.id,
-        coefficientKey: mutation.coefficientKey,
-        oldValue: mutation.oldValue,
-        newValue: mutation.newValue,
-        defaultValue: mutation.defaultValue,
-        correctionFactor: mutation.correctionFactor,
-        clampedCorrectionFactor: mutation.clampedCorrectionFactor,
-        sampleCountBefore: mutation.oldEligibleSampleCount,
-        sampleCountAfter: mutation.newEligibleSampleCount,
-        weight: mutation.weight,
-        reason: mutation.reason,
-        algorithmVersion: policyResult.algorithmVersion,
-        changeMetadata: mutation.metadata,
-      });
-      appliedMutations += 1;
-    }
+      if (updated.affected !== 1) {
+        throw new Error(
+          `Stale coefficient update for ${mutation.coefficientKey}`
+        );
+      }
 
-    if (appliedMutations === 0) {
-      return this.markSkipped(
-        manager,
-        feedback,
-        'no_coefficient_changes',
-        policyResult.algorithmVersion
-      );
+      // A processed feedback row audits successful state application. Only real
+      // value changes belong in coefficient_change_events.
+      if (mutation.oldValue !== mutation.newValue)
+        await eventRepository.insert({
+          tenantUserId,
+          feedbackId: feedback.id,
+          coefficientKey: mutation.coefficientKey,
+          oldValue: mutation.oldValue,
+          newValue: mutation.newValue,
+          defaultValue: mutation.defaultValue,
+          correctionFactor: mutation.correctionFactor,
+          clampedCorrectionFactor: mutation.clampedCorrectionFactor,
+          sampleCountBefore: mutation.oldEligibleSampleCount,
+          sampleCountAfter: mutation.newEligibleSampleCount,
+          weight: mutation.weight,
+          reason: mutation.reason,
+          algorithmVersion: policyResult.algorithmVersion,
+          changeMetadata: mutation.metadata,
+        });
     }
 
     feedback.processingStatus = FeedbackProcessingStatus.PROCESSED;
@@ -434,21 +433,42 @@ export class FeedbackCalibrationProcessor {
 
   private validatePolicyResult(
     policyResult: FeedbackCalibrationPolicyResult,
-    lockedByKey: Map<string, TenantCalibrationCoefficient>
+    lockedByKey: Map<string, TenantCalibrationCoefficient>,
+    tenantUserId: string
   ): void {
-    if (!policyResult.algorithmVersion) {
-      throw new Error('Policy result must include an algorithm version');
+    if (
+      policyResult.algorithmVersion !== this.policy.algorithmVersion ||
+      !policyResult.algorithmVersion ||
+      policyResult.algorithmVersion.length > 32
+    ) {
+      throw new Error(
+        'Policy result algorithm version must match the active policy'
+      );
     }
 
-    const targetKeys = [...new Set(policyResult.targetCoefficientKeys)].sort();
+    if (
+      new Set(policyResult.targetCoefficientKeys).size !==
+      policyResult.targetCoefficientKeys.length
+    ) {
+      throw new Error('Policy returned duplicated target keys');
+    }
+    if (
+      [...lockedByKey.values()].some((row) => row.tenantUserId !== tenantUserId)
+    ) {
+      throw new Error('Locked coefficient tenant mismatch');
+    }
+    const targetKeys = [...policyResult.targetCoefficientKeys].sort();
     const lockedKeys = [...lockedByKey.keys()].sort();
     if (JSON.stringify(targetKeys) !== JSON.stringify(lockedKeys)) {
-      throw new Error('Policy target keys do not match locked coefficient rows');
+      throw new Error(
+        'Policy target keys do not match locked coefficient rows'
+      );
     }
 
-    if (policyResult.mutations.length === 0) {
-      return;
+    if (policyResult.skipReason && policyResult.mutations.length > 0) {
+      throw new Error('Skipped policy result cannot contain mutations');
     }
+    if (policyResult.mutations.length === 0) return;
 
     const mutationKeys = policyResult.mutations.map(
       (mutation) => mutation.coefficientKey
@@ -457,10 +477,17 @@ export class FeedbackCalibrationProcessor {
       throw new Error('Policy returned duplicated mutation keys');
     }
 
-    for (const key of mutationKeys) {
-      if (!targetKeys.includes(key)) {
-        throw new Error(`Policy returned unexpected mutation key ${key}`);
+    for (const mutation of policyResult.mutations) {
+      const coefficient = lockedByKey.get(mutation.coefficientKey);
+      if (!coefficient) {
+        throw new Error(
+          `Policy returned unexpected mutation key ${mutation.coefficientKey}`
+        );
       }
+      this.validateMutation(mutation, coefficient);
+    }
+    if (mutationKeys.length !== targetKeys.length) {
+      throw new Error('Policy must update state for every target coefficient');
     }
   }
 
@@ -468,6 +495,31 @@ export class FeedbackCalibrationProcessor {
     mutation: FeedbackCoefficientMutation,
     coefficient: TenantCalibrationCoefficient
   ): void {
+    if (
+      coefficient.value !== mutation.oldValue ||
+      coefficient.eligibleSampleCount !== mutation.oldEligibleSampleCount ||
+      coefficient.totalWeight !== mutation.oldTotalWeight ||
+      coefficient.ewmaLogError !== mutation.oldEwmaLogError
+    ) {
+      throw new Error(
+        `Policy old state mismatch for ${mutation.coefficientKey}`
+      );
+    }
+    if (
+      !Number.isFinite(coefficient.minValue) ||
+      !Number.isFinite(coefficient.maxValue) ||
+      coefficient.minValue < TENANT_COEFFICIENT_MIN_VALUE ||
+      coefficient.maxValue > TENANT_COEFFICIENT_MAX_VALUE ||
+      coefficient.minValue > coefficient.maxValue ||
+      !Number.isInteger(coefficient.version) ||
+      coefficient.version < 1 ||
+      !Number.isFinite(mutation.oldEwmaLogError) ||
+      !Number.isFinite(mutation.newEwmaLogError)
+    ) {
+      throw new Error(
+        `Invalid bounds or EWMA state for ${mutation.coefficientKey}`
+      );
+    }
     if (!COEFFICIENT_KEY_PATTERN.test(mutation.coefficientKey)) {
       throw new Error(`Invalid coefficient key ${mutation.coefficientKey}`);
     }
@@ -478,26 +530,32 @@ export class FeedbackCalibrationProcessor {
       mutation.newValue < coefficient.minValue ||
       mutation.newValue > coefficient.maxValue
     ) {
-      throw new Error(`Invalid coefficient value for ${mutation.coefficientKey}`);
+      throw new Error(
+        `Invalid coefficient value for ${mutation.coefficientKey}`
+      );
     }
 
+    if (mutation.defaultValue !== coefficient.defaultValue) {
+      throw new Error(
+        `Policy default value mismatch for ${mutation.coefficientKey}`
+      );
+    }
     if (
       mutation.defaultValue !== null &&
       (!this.isValidCoefficientValue(mutation.defaultValue) ||
         mutation.defaultValue < coefficient.minValue ||
         mutation.defaultValue > coefficient.maxValue)
     ) {
-      throw new Error(
-        `Invalid default value for ${mutation.coefficientKey}`
-      );
+      throw new Error(`Invalid default value for ${mutation.coefficientKey}`);
     }
 
     if (
-      !Number.isInteger(mutation.oldEligibleSampleCount) ||
-      !Number.isInteger(mutation.newEligibleSampleCount) ||
+      !Number.isSafeInteger(mutation.oldEligibleSampleCount) ||
+      !Number.isSafeInteger(mutation.newEligibleSampleCount) ||
       mutation.oldEligibleSampleCount < 0 ||
       mutation.newEligibleSampleCount < 0 ||
-      mutation.newEligibleSampleCount < mutation.oldEligibleSampleCount
+      mutation.newEligibleSampleCount > 2147483647 ||
+      mutation.newEligibleSampleCount !== mutation.oldEligibleSampleCount + 1
     ) {
       throw new Error(`Invalid sample counts for ${mutation.coefficientKey}`);
     }
@@ -505,7 +563,10 @@ export class FeedbackCalibrationProcessor {
     if (
       !this.isValidNonNegativeFinite(mutation.oldTotalWeight) ||
       !this.isValidNonNegativeFinite(mutation.newTotalWeight) ||
-      mutation.newTotalWeight < mutation.oldTotalWeight
+      mutation.newTotalWeight <= mutation.oldTotalWeight ||
+      mutation.weight === null ||
+      mutation.weight <= 0 ||
+      mutation.newTotalWeight !== mutation.oldTotalWeight + mutation.weight
     ) {
       throw new Error(`Invalid weights for ${mutation.coefficientKey}`);
     }
@@ -566,7 +627,7 @@ export class FeedbackCalibrationProcessor {
       {
         processingStatus: FeedbackProcessingStatus.FAILED,
         processingError: message.slice(0, 2000),
-        algorithmVersion: 'no-learning-pr3.3',
+        algorithmVersion: this.policy.algorithmVersion,
         processedAt: new Date(),
       }
     );

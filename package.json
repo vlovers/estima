@@ -20,6 +20,7 @@
     "lint:web": "nx lint web",
     "test": "nx run-many --target=test --all",
     "test:api": "nx test api",
+    "simulate:calibration": "TS_NODE_PROJECT=api/tsconfig.app.json node -r ts-node/register -r tsconfig-paths/register api/src/modules/estimate-feedback/testing/calibration-simulation.ts",
     "test:web": "nx test web",
     "test:e2e:api": "nx e2e api-e2e",
     "test:e2e:web": "nx e2e web-e2e",

@@ -1,0 +1,586 @@
+{
+  "algorithmVersion": "adaptive-log-pr3.4-v1",
+  "seed": 340034,
+  "options": {
+    "minRatio": 0.35,
+    "maxRatio": 3,
+    "minLearningSamples": 5,
+    "fullConfidenceSamples": 30,
+    "baseLearningRate": 0.08,
+    "ewmaAlpha": 0.2,
+    "maxCombinedLogStep": 0.04879016416943205
+  },
+  "assumptions": "Synthetic hours; LCG seed resets for each scenario. 120 chronological closed-loop training observations and 60 frozen test observations per tenant (E: 4 training). Baselines use uncalibrated global predictions and the clipped median actual/global-prediction ratio of the last 30 training observations. Bias = prediction - actual, in hours. WAPE and percentage metrics are fractions. Movement = largest abs(new/old - 1); combined correction = largest exp(abs(sum(log(new/old)))) per feedback. Cumulative correction is measured relative to defaults. No real-world accuracy claim.",
+  "results": [
+    {
+      "scenario": "A persistent underestimation",
+      "trainObservations": 120,
+      "testObservations": 60,
+      "global": {
+        "mae": 12.735495869965966,
+        "wape": 0.3412323490412594,
+        "meanSignedBias": -12.735495869965966,
+        "medianAbsolutePercentageError": 0.3376914968412803,
+        "within20Percent": 0,
+        "within30Percent": 0.06666666666666667
+      },
+      "calibrated": {
+        "mae": 1.069071501024716,
+        "wape": 0.028644489646299412,
+        "meanSignedBias": -0.4541147701881377,
+        "medianAbsolutePercentageError": 0.0256059921417384,
+        "within20Percent": 1,
+        "within30Percent": 1
+      },
+      "medianBaseline": {
+        "mae": 1.0888746749424256,
+        "wape": 0.029175091958404807,
+        "meanSignedBias": -0.5348392118693863,
+        "medianAbsolutePercentageError": 0.02682972987702377,
+        "within20Percent": 1,
+        "within30Percent": 1
+      },
+      "maxCoefficientMovement": 0.01685656393674062,
+      "maxCombinedMultiplicativeCorrection": 1.0168565639367406,
+      "maxCumulativeMultiplicativeCorrection": 1.5116906039299813,
+      "states": [
+        {
+          "tenant": "A",
+          "values": [
+            1.4995158574147494
+          ],
+          "sampleCounts": [
+            120
+          ],
+          "totalWeights": [
+            120
+          ],
+          "ewmaLogErrors": [
+            0.00868365269008863
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": "B persistent overestimation",
+      "trainObservations": 120,
+      "testObservations": 60,
+      "global": {
+        "mae": 8.413674228523472,
+        "wape": 0.5202330406740168,
+        "meanSignedBias": 8.413674228523472,
+        "medianAbsolutePercentageError": 0.5284042380585839,
+        "within20Percent": 0,
+        "within30Percent": 0
+      },
+      "calibrated": {
+        "mae": 0.46274400315675623,
+        "wape": 0.02861231767207999,
+        "meanSignedBias": -0.19435974625481414,
+        "medianAbsolutePercentageError": 0.025458192142907614,
+        "within20Percent": 1,
+        "within30Percent": 1
+      },
+      "medianBaseline": {
+        "mae": 0.47184569247505165,
+        "wape": 0.029175091958404835,
+        "meanSignedBias": -0.23176365847673433,
+        "medianAbsolutePercentageError": 0.02682972987702377,
+        "within20Percent": 1,
+        "within30Percent": 1
+      },
+      "maxCoefficientMovement": 0.017472738141293576,
+      "maxCombinedMultiplicativeCorrection": 1.0177834639501395,
+      "maxCumulativeMultiplicativeCorrection": 1.5542901146524923,
+      "states": [
+        {
+          "tenant": "A",
+          "values": [
+            0.6498887676692605
+          ],
+          "sampleCounts": [
+            120
+          ],
+          "totalWeights": [
+            120
+          ],
+          "ewmaLogErrors": [
+            0.008430865268761195
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": "C accurate estimates",
+      "trainObservations": 120,
+      "testObservations": 60,
+      "global": {
+        "mae": 0.472447662562806,
+        "wape": 0.01906567833133522,
+        "meanSignedBias": -0.1934390420415028,
+        "medianAbsolutePercentageError": 0.016932827749199873,
+        "within20Percent": 1,
+        "within30Percent": 1
+      },
+      "calibrated": {
+        "mae": 0.47332486802858553,
+        "wape": 0.019101078056143504,
+        "meanSignedBias": -0.19752455667814503,
+        "medianAbsolutePercentageError": 0.017096182600356433,
+        "within20Percent": 1,
+        "within30Percent": 1
+      },
+      "medianBaseline": {
+        "mae": 0.48240003207267584,
+        "wape": 0.019467307317455013,
+        "meanSignedBias": -0.234662833279107,
+        "medianAbsolutePercentageError": 0.017969016339522567,
+        "within20Percent": 1,
+        "within30Percent": 1
+      },
+      "maxCoefficientMovement": 0.0035508835634507907,
+      "maxCombinedMultiplicativeCorrection": 1.0035508835634508,
+      "maxCumulativeMultiplicativeCorrection": 1.010962018420002,
+      "states": [
+        {
+          "tenant": "A",
+          "values": [
+            0.9998338314453299
+          ],
+          "sampleCounts": [
+            120
+          ],
+          "totalWeights": [
+            120
+          ],
+          "ewmaLogErrors": [
+            0.00570739040621944
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": "D extreme outliers",
+      "trainObservations": 120,
+      "testObservations": 60,
+      "global": {
+        "mae": 118.23299571564715,
+        "wape": 0.8741540586979538,
+        "meanSignedBias": -113.02312163503667,
+        "medianAbsolutePercentageError": 0.1148213722227443,
+        "within20Percent": 0.75,
+        "within30Percent": 0.75
+      },
+      "calibrated": {
+        "mae": 117.07652548924234,
+        "wape": 0.8656037116814033,
+        "meanSignedBias": -110.25757417491882,
+        "medianAbsolutePercentageError": 0.0388352978456588,
+        "within20Percent": 0.75,
+        "within30Percent": 0.75
+      },
+      "medianBaseline": {
+        "mae": 117.05335303541929,
+        "wape": 0.8654323864566908,
+        "meanSignedBias": -110.45545287937112,
+        "medianAbsolutePercentageError": 0.04121527604548109,
+        "within20Percent": 0.75,
+        "within30Percent": 0.75
+      },
+      "maxCoefficientMovement": 0.050000000000000044,
+      "maxCombinedMultiplicativeCorrection": 1.0500000000000003,
+      "maxCumulativeMultiplicativeCorrection": 1.1729758840122675,
+      "states": [
+        {
+          "tenant": "A",
+          "values": [
+            1.1244001369012022
+          ],
+          "sampleCounts": [
+            120
+          ],
+          "totalWeights": [
+            120
+          ],
+          "ewmaLogErrors": [
+            -0.002076985695563034
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": "E four warm-up samples",
+      "trainObservations": 4,
+      "testObservations": 60,
+      "global": {
+        "mae": 10.0764656879649,
+        "wape": 0.3267342247863954,
+        "meanSignedBias": -10.0764656879649,
+        "medianAbsolutePercentageError": 0.32446314852199926,
+        "within20Percent": 0,
+        "within30Percent": 0.18333333333333332
+      },
+      "calibrated": {
+        "mae": 10.0764656879649,
+        "wape": 0.3267342247863954,
+        "meanSignedBias": -10.0764656879649,
+        "medianAbsolutePercentageError": 0.32446314852199926,
+        "within20Percent": 0,
+        "within30Percent": 0.18333333333333332
+      },
+      "medianBaseline": {
+        "mae": 1.2347178916805206,
+        "wape": 0.040036318850365224,
+        "meanSignedBias": 1.0268194335281124,
+        "medianAbsolutePercentageError": 0.03678064765755011,
+        "within20Percent": 1,
+        "within30Percent": 1
+      },
+      "maxCoefficientMovement": 0,
+      "maxCombinedMultiplicativeCorrection": 1,
+      "maxCumulativeMultiplicativeCorrection": 1,
+      "states": [
+        {
+          "tenant": "A",
+          "values": [
+            1
+          ],
+          "sampleCounts": [
+            4
+          ],
+          "totalWeights": [
+            4
+          ],
+          "ewmaLogErrors": [
+            0.2526932134698422
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": "F alternating errors",
+      "trainObservations": 120,
+      "testObservations": 60,
+      "global": {
+        "mae": 8.437344135748495,
+        "wape": 0.34604754939838617,
+        "meanSignedBias": -0.95245712994997,
+        "medianAbsolutePercentageError": 0.3642857142857143,
+        "within20Percent": 0,
+        "within30Percent": 0.21666666666666667
+      },
+      "calibrated": {
+        "mae": 8.460103056529128,
+        "wape": 0.34698097923559307,
+        "meanSignedBias": -0.6016566828200332,
+        "medianAbsolutePercentageError": 0.36973999867485746,
+        "within20Percent": 0,
+        "within30Percent": 0.5
+      },
+      "medianBaseline": {
+        "mae": 8.535061220013805,
+        "wape": 0.35005529840095384,
+        "meanSignedBias": 0.5537301441701127,
+        "medianAbsolutePercentageError": 0.3877040816326531,
+        "within20Percent": 0,
+        "within30Percent": 0.5
+      },
+      "maxCoefficientMovement": 0.030169037309633273,
+      "maxCombinedMultiplicativeCorrection": 1.0301850970014454,
+      "maxCumulativeMultiplicativeCorrection": 1.0151701207495987,
+      "states": [
+        {
+          "tenant": "A",
+          "values": [
+            1.0149725453819616
+          ],
+          "sampleCounts": [
+            120
+          ],
+          "totalWeights": [
+            120
+          ],
+          "ewmaLogErrors": [
+            0.04128164347304608
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": "G five simultaneous factors",
+      "trainObservations": 120,
+      "testObservations": 60,
+      "global": {
+        "mae": 27.814322980005674,
+        "wape": 0.34123234904125943,
+        "meanSignedBias": -27.814322980005674,
+        "medianAbsolutePercentageError": 0.33769149684128025,
+        "within20Percent": 0,
+        "within30Percent": 0.06666666666666667
+      },
+      "calibrated": {
+        "mae": 2.334852158237964,
+        "wape": 0.028644489646299214,
+        "meanSignedBias": -0.9917866580908202,
+        "medianAbsolutePercentageError": 0.025605992141737532,
+        "within20Percent": 1,
+        "within30Percent": 1
+      },
+      "medianBaseline": {
+        "mae": 2.3781022900742586,
+        "wape": 0.029175091958404814,
+        "meanSignedBias": -1.168088838722739,
+        "medianAbsolutePercentageError": 0.026829729877023777,
+        "within20Percent": 1,
+        "within30Percent": 1
+      },
+      "maxCoefficientMovement": 0.0033488085140214174,
+      "maxCombinedMultiplicativeCorrection": 1.0168565639367404,
+      "maxCumulativeMultiplicativeCorrection": 1.5116906039299816,
+      "states": [
+        {
+          "tenant": "A",
+          "values": [
+            1.0844017569623574,
+            1.0844017569623574,
+            1.518162459747299,
+            1.3012821083548287,
+            1.4097222840510646
+          ],
+          "sampleCounts": [
+            120,
+            120,
+            120,
+            120,
+            120
+          ],
+          "totalWeights": [
+            23.999999999999947,
+            23.999999999999947,
+            23.999999999999947,
+            23.999999999999947,
+            23.999999999999947
+          ],
+          "ewmaLogErrors": [
+            0.001736730538017602,
+            0.001736730538017602,
+            0.001736730538017602,
+            0.001736730538017602,
+            0.001736730538017602
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": "H opposite tenants",
+      "trainObservations": 240,
+      "testObservations": 120,
+      "global": {
+        "mae": 9.396795541973756,
+        "wape": 0.39067784886105905,
+        "meanSignedBias": -1.4082664628670447,
+        "medianAbsolutePercentageError": 0.4119287828033203,
+        "within20Percent": 0,
+        "within30Percent": 0.058333333333333334
+      },
+      "calibrated": {
+        "mae": 0.7440888947707304,
+        "wape": 0.030935976788250073,
+        "meanSignedBias": 0.1678136433182429,
+        "medianAbsolutePercentageError": 0.030109298068982913,
+        "within20Percent": 1,
+        "within30Percent": 1
+      },
+      "medianBaseline": {
+        "mae": 0.7895627794427718,
+        "wape": 0.032826582938365094,
+        "meanSignedBias": 0.2526231466546541,
+        "medianAbsolutePercentageError": 0.02987285437263422,
+        "within20Percent": 1,
+        "within30Percent": 1
+      },
+      "maxCoefficientMovement": 0.01733821525402246,
+      "maxCombinedMultiplicativeCorrection": 1.0176441330304755,
+      "maxCumulativeMultiplicativeCorrection": 1.5526928340108737,
+      "states": [
+        {
+          "tenant": "A",
+          "values": [
+            1.5123493884268524
+          ],
+          "sampleCounts": [
+            120
+          ],
+          "totalWeights": [
+            120
+          ],
+          "ewmaLogErrors": [
+            -0.01548805667046253
+          ]
+        },
+        {
+          "tenant": "B",
+          "values": [
+            0.6440423875834007
+          ],
+          "sampleCounts": [
+            120
+          ],
+          "totalWeights": [
+            120
+          ],
+          "ewmaLogErrors": [
+            -0.011645163898609274
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": "I bounds saturation",
+      "trainObservations": 120,
+      "testObservations": 60,
+      "global": {
+        "mae": 210.8662183768116,
+        "wape": 0.9,
+        "meanSignedBias": -210.8662183768116,
+        "medianAbsolutePercentageError": 0.9,
+        "within20Percent": 0,
+        "within30Percent": 0
+      },
+      "calibrated": {
+        "mae": 187.43663855716585,
+        "wape": 0.8,
+        "meanSignedBias": -187.43663855716585,
+        "medianAbsolutePercentageError": 0.8,
+        "within20Percent": 0,
+        "within30Percent": 0
+      },
+      "medianBaseline": {
+        "mae": 164.00705873752014,
+        "wape": 0.7,
+        "meanSignedBias": -164.00705873752014,
+        "medianAbsolutePercentageError": 0.7,
+        "within20Percent": 0,
+        "within30Percent": 0
+      },
+      "maxCoefficientMovement": 0.050000000000000044,
+      "maxCombinedMultiplicativeCorrection": 1.05,
+      "maxCumulativeMultiplicativeCorrection": 2,
+      "states": [
+        {
+          "tenant": "A",
+          "values": [
+            2
+          ],
+          "sampleCounts": [
+            120
+          ],
+          "totalWeights": [
+            120
+          ],
+          "ewmaLogErrors": [
+            1.0986122886655296
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": "J repeated feedback",
+      "trainObservations": 120,
+      "testObservations": 60,
+      "global": {
+        "mae": 12.735495869965966,
+        "wape": 0.3412323490412594,
+        "meanSignedBias": -12.735495869965966,
+        "medianAbsolutePercentageError": 0.3376914968412803,
+        "within20Percent": 0,
+        "within30Percent": 0.06666666666666667
+      },
+      "calibrated": {
+        "mae": 1.069071501024716,
+        "wape": 0.028644489646299412,
+        "meanSignedBias": -0.4541147701881377,
+        "medianAbsolutePercentageError": 0.0256059921417384,
+        "within20Percent": 1,
+        "within30Percent": 1
+      },
+      "medianBaseline": {
+        "mae": 1.0888746749424256,
+        "wape": 0.029175091958404807,
+        "meanSignedBias": -0.5348392118693863,
+        "medianAbsolutePercentageError": 0.02682972987702377,
+        "within20Percent": 1,
+        "within30Percent": 1
+      },
+      "maxCoefficientMovement": 0.01685656393674062,
+      "maxCombinedMultiplicativeCorrection": 1.0168565639367406,
+      "maxCumulativeMultiplicativeCorrection": 1.5116906039299813,
+      "states": [
+        {
+          "tenant": "A",
+          "values": [
+            1.4995158574147494
+          ],
+          "sampleCounts": [
+            120
+          ],
+          "totalWeights": [
+            120
+          ],
+          "ewmaLogErrors": [
+            0.00868365269008863
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": "K held-out regime reversal",
+      "trainObservations": 120,
+      "testObservations": 60,
+      "global": {
+        "mae": 7.169605399200566,
+        "wape": 0.41164496634015857,
+        "meanSignedBias": 7.169605399200566,
+        "medianAbsolutePercentageError": 0.41923250676868523,
+        "within20Percent": 0,
+        "within30Percent": 0
+      },
+      "calibrated": {
+        "mae": 19.45098649897839,
+        "wape": 1.1167840120667776,
+        "meanSignedBias": 19.45098649897839,
+        "medianAbsolutePercentageError": 1.128161649258129,
+        "within20Percent": 0,
+        "within30Percent": 0
+      },
+      "medianBaseline": {
+        "mae": 19.370262057297147,
+        "wape": 1.1121491949145799,
+        "meanSignedBias": 19.370262057297147,
+        "medianAbsolutePercentageError": 1.1235019201320569,
+        "within20Percent": 0,
+        "within30Percent": 0
+      },
+      "maxCoefficientMovement": 0.01685656393674062,
+      "maxCombinedMultiplicativeCorrection": 1.0168565639367406,
+      "maxCumulativeMultiplicativeCorrection": 1.5116906039299813,
+      "states": [
+        {
+          "tenant": "A",
+          "values": [
+            1.4995158574147494
+          ],
+          "sampleCounts": [
+            120
+          ],
+          "totalWeights": [
+            120
+          ],
+          "ewmaLogErrors": [
+            0.00868365269008863
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -6,6 +6,10 @@ import cookieParser from 'cookie-parser';
 import { AppModule } from '../../app.module';
 import { AiEstimatorService } from '../ai-estimator/ai-estimator.service';
 import { CalibrationService } from '../calibration/calibration.service';
+import {
+  FEEDBACK_CALIBRATION_POLICY,
+  NoLearningFeedbackCalibrationPolicy,
+} from '../estimate-feedback/feedback-calibration-policy';
 import { FeedbackCalibrationProcessor } from '../estimate-feedback/feedback-calibration.processor';
 import {
   EstimateFeedback,
@@ -268,6 +272,10 @@ const createTestingApp = async (): Promise<INestApplication> => {
   const moduleFixture: TestingModule = await Test.createTestingModule({
     imports: [AppModule],
   })
+    // Keep PR3.3 reference-policy safety tests; adaptive production coverage is
+    // in adaptive-feedback-calibration.int-spec.ts using the production binding.
+    .overrideProvider(FEEDBACK_CALIBRATION_POLICY)
+    .useClass(NoLearningFeedbackCalibrationPolicy)
     .overrideProvider(AiEstimatorService)
     .useValue(createAiEstimatorMock())
     .compile();
@@ -930,9 +938,9 @@ describe('Runtime database safety and tenant isolation (PostgreSQL integration)'
 
     expect(await tenantCoefficientCount(dataSource, userA.id, key)).toBe(1);
     for (const feedbackId of feedbackIds) {
-      expect((await feedbackById(dataSource, feedbackId)).processingStatus).toBe(
-        FeedbackProcessingStatus.SKIPPED
-      );
+      expect(
+        (await feedbackById(dataSource, feedbackId)).processingStatus
+      ).toBe(FeedbackProcessingStatus.SKIPPED);
     }
   });
 
@@ -1017,6 +1025,7 @@ describe('Runtime database safety and tenant isolation (PostgreSQL integration)'
     });
 
     (processor as any).policy = {
+      algorithmVersion: 'test-policy-v1',
       evaluate: async (context: {
         targetCoefficientKeys: string[];
         coefficients: Array<{
@@ -1025,11 +1034,10 @@ describe('Runtime database safety and tenant isolation (PostgreSQL integration)'
           defaultValue: number;
           eligibleSampleCount: number;
           totalWeight: number;
+          ewmaLogError: number;
         }>;
       }) => {
-        const coefficient = context.coefficients.find(
-          (row) => row.key === key
-        );
+        const coefficient = context.coefficients.find((row) => row.key === key);
         if (!coefficient) {
           throw new Error('expected audit coefficient row');
         }
@@ -1039,12 +1047,33 @@ describe('Runtime database safety and tenant isolation (PostgreSQL integration)'
           algorithmVersion: 'test-policy-v1',
           metadata: { test: true },
           mutations: [
+            ...context.coefficients
+              .filter((row) => row.key !== key)
+              .map((row) => ({
+                coefficientKey: row.key,
+                oldValue: row.value,
+                newValue: row.value,
+                oldEligibleSampleCount: row.eligibleSampleCount,
+                newEligibleSampleCount: row.eligibleSampleCount + 1,
+                oldTotalWeight: row.totalWeight,
+                newTotalWeight: row.totalWeight + 1,
+                oldEwmaLogError: row.ewmaLogError,
+                newEwmaLogError: row.ewmaLogError,
+                defaultValue: row.defaultValue,
+                correctionFactor: 1,
+                clampedCorrectionFactor: 1,
+                weight: 1,
+                reason: 'test_state_only',
+                metadata: null,
+              })),
             {
               coefficientKey: key,
               oldValue: coefficient.value,
               newValue: 1.1,
               oldEligibleSampleCount: coefficient.eligibleSampleCount,
               newEligibleSampleCount: coefficient.eligibleSampleCount + 1,
+              oldEwmaLogError: coefficient.ewmaLogError,
+              newEwmaLogError: coefficient.ewmaLogError,
               oldTotalWeight: coefficient.totalWeight,
               newTotalWeight: coefficient.totalWeight + 1,
               defaultValue: coefficient.defaultValue,
@@ -1113,6 +1142,7 @@ describe('Runtime database safety and tenant isolation (PostgreSQL integration)'
     });
 
     (processor as any).policy = {
+      algorithmVersion: 'invalid-test-policy',
       evaluate: async (context: {
         targetCoefficientKeys: string[];
         coefficients: Array<{
@@ -1121,11 +1151,10 @@ describe('Runtime database safety and tenant isolation (PostgreSQL integration)'
           defaultValue: number;
           eligibleSampleCount: number;
           totalWeight: number;
+          ewmaLogError: number;
         }>;
       }) => {
-        const coefficient = context.coefficients.find(
-          (row) => row.key === key
-        );
+        const coefficient = context.coefficients.find((row) => row.key === key);
         if (!coefficient) {
           throw new Error('expected concurrency coefficient row');
         }
@@ -1135,12 +1164,33 @@ describe('Runtime database safety and tenant isolation (PostgreSQL integration)'
           algorithmVersion: 'invalid-test-policy',
           metadata: null,
           mutations: [
+            ...context.coefficients
+              .filter((row) => row.key !== key)
+              .map((row) => ({
+                coefficientKey: row.key,
+                oldValue: row.value,
+                newValue: row.value,
+                oldEligibleSampleCount: row.eligibleSampleCount,
+                newEligibleSampleCount: row.eligibleSampleCount + 1,
+                oldTotalWeight: row.totalWeight,
+                newTotalWeight: row.totalWeight + 1,
+                oldEwmaLogError: row.ewmaLogError,
+                newEwmaLogError: row.ewmaLogError,
+                defaultValue: row.defaultValue,
+                correctionFactor: 1,
+                clampedCorrectionFactor: 1,
+                weight: 1,
+                reason: 'test_state_only',
+                metadata: null,
+              })),
             {
               coefficientKey: key,
               oldValue: coefficient.value,
               newValue: 3,
               oldEligibleSampleCount: coefficient.eligibleSampleCount,
               newEligibleSampleCount: coefficient.eligibleSampleCount + 1,
+              oldEwmaLogError: coefficient.ewmaLogError,
+              newEwmaLogError: coefficient.ewmaLogError,
               oldTotalWeight: coefficient.totalWeight,
               newTotalWeight: coefficient.totalWeight + 1,
               defaultValue: coefficient.defaultValue,
@@ -1196,6 +1246,8 @@ describe('Runtime database safety and tenant isolation (PostgreSQL integration)'
               newValue: 1.2,
               oldEligibleSampleCount: coefficient.eligibleSampleCount,
               newEligibleSampleCount: coefficient.eligibleSampleCount + 1,
+              oldEwmaLogError: coefficient.ewmaLogError,
+              newEwmaLogError: coefficient.ewmaLogError,
               oldTotalWeight: coefficient.totalWeight,
               newTotalWeight: coefficient.totalWeight + 1,
               defaultValue: coefficient.defaultValue,
@@ -1211,6 +1263,8 @@ describe('Runtime database safety and tenant isolation (PostgreSQL integration)'
               newValue: 1.3,
               oldEligibleSampleCount: coefficient.eligibleSampleCount,
               newEligibleSampleCount: coefficient.eligibleSampleCount + 1,
+              oldEwmaLogError: coefficient.ewmaLogError,
+              newEwmaLogError: coefficient.ewmaLogError,
               oldTotalWeight: coefficient.totalWeight,
               newTotalWeight: coefficient.totalWeight + 1,
               defaultValue: coefficient.defaultValue,
@@ -1249,6 +1303,8 @@ describe('Runtime database safety and tenant isolation (PostgreSQL integration)'
               newValue: 1.1,
               oldEligibleSampleCount: 0,
               newEligibleSampleCount: 1,
+              oldEwmaLogError: 0,
+              newEwmaLogError: 0,
               oldTotalWeight: 0,
               newTotalWeight: 1,
               defaultValue: 1,
@@ -1274,6 +1330,10 @@ describe('Runtime database safety and tenant isolation (PostgreSQL integration)'
           missedComplexityTags: [tag],
         });
         (processor as any).policy = {
+          algorithmVersion: testCase.buildResult(
+            { targetCoefficientKeys: [] },
+            { key: '', value: 1, eligibleSampleCount: 0, totalWeight: 0 }
+          ).algorithmVersion,
           evaluate: async (context: any) => {
             const coefficient = context.coefficients.find(
               (row: { key: string }) => row.key === testCase.key
@@ -1285,9 +1345,9 @@ describe('Runtime database safety and tenant isolation (PostgreSQL integration)'
         await expect(processor.processFeedback(feedbackId)).rejects.toThrow(
           testCase.error
         );
-        expect((await feedbackById(dataSource, feedbackId)).processingStatus).toBe(
-          FeedbackProcessingStatus.FAILED
-        );
+        expect(
+          (await feedbackById(dataSource, feedbackId)).processingStatus
+        ).toBe(FeedbackProcessingStatus.FAILED);
         const [eventCount] = await dataSource.query(
           `
             SELECT count(*)::int AS count

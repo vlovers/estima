@@ -15,6 +15,8 @@ export type FeedbackCoefficientMutation = {
   newValue: number;
   oldEligibleSampleCount: number;
   newEligibleSampleCount: number;
+  oldEwmaLogError: number;
+  newEwmaLogError: number;
   oldTotalWeight: number;
   newTotalWeight: number;
   defaultValue: number | null;
@@ -33,7 +35,12 @@ export type FeedbackCalibrationPolicyResult = {
   metadata: Record<string, unknown> | null;
 };
 
+export const FEEDBACK_CALIBRATION_POLICY = Symbol(
+  'FEEDBACK_CALIBRATION_POLICY'
+);
+
 export interface FeedbackCalibrationPolicy {
+  readonly algorithmVersion: string;
   evaluate(
     context: FeedbackCalibrationContext
   ): Promise<FeedbackCalibrationPolicyResult>;
@@ -45,6 +52,8 @@ export const NO_LEARNING_ALGORITHM_VERSION = 'no-learning-pr3.3';
 export class NoLearningFeedbackCalibrationPolicy
   implements FeedbackCalibrationPolicy
 {
+  readonly algorithmVersion = NO_LEARNING_ALGORITHM_VERSION;
+
   async evaluate(
     context: FeedbackCalibrationContext
   ): Promise<FeedbackCalibrationPolicyResult> {
