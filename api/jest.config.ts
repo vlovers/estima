@@ -1,9 +1,13 @@
+import { createRequire } from 'node:module';
+
+const resolve = createRequire(import.meta.url).resolve;
+
 export default {
   displayName: 'api',
   testEnvironment: 'node',
   transform: {
     '^.+\\.[tj]s$': [
-      require.resolve('ts-jest'),
+      resolve('ts-jest'),
       {
         tsconfig: '<rootDir>/api/tsconfig.spec.json',
       },
