@@ -47,8 +47,8 @@ describe('EstimateFeedbackService tenant isolation', () => {
 
     feedbackRepository = {
       create: jest.fn((value) => value as EstimateFeedback),
-      save: jest.fn(
-        async (value) => ({ id: 'feedback-a', ...value } as EstimateFeedback)
+      insert: jest.fn(
+        async () => ({ identifiers: [{ id: 'feedback-a' }] } as any)
       ),
       createQueryBuilder: jest.fn(() => feedbackQb as any),
     } as unknown as jest.Mocked<Repository<EstimateFeedback>>;
@@ -92,7 +92,7 @@ describe('EstimateFeedbackService tenant isolation', () => {
     expect(taskQb.andWhere).toHaveBeenCalledWith('project."userId" = :userId', {
       userId: 'user-a',
     });
-    expect(feedbackRepository.save).toHaveBeenCalled();
+    expect(feedbackRepository.insert).toHaveBeenCalled();
     expect(feedbackRepository.create).toHaveBeenCalledWith(
       expect.objectContaining({
         estimateId: 'estimate-final',
@@ -116,7 +116,7 @@ describe('EstimateFeedbackService tenant isolation', () => {
       service.create({ taskId: 'task-b', actualHours: 10 }, 'user-a')
     ).rejects.toBeInstanceOf(NotFoundException);
 
-    expect(feedbackRepository.save).not.toHaveBeenCalled();
+    expect(feedbackRepository.insert).not.toHaveBeenCalled();
     expect(feedbackCalibrationProcessor.processFeedback).not.toHaveBeenCalled();
   });
 
@@ -160,7 +160,7 @@ describe('EstimateFeedbackService tenant isolation', () => {
         'user-a'
       )
     ).resolves.toBe(existing);
-    expect(feedbackRepository.save).not.toHaveBeenCalled();
+    expect(feedbackRepository.insert).not.toHaveBeenCalled();
   });
 
   it('rejects conflicting idempotency payloads', async () => {
@@ -187,7 +187,7 @@ describe('EstimateFeedbackService tenant isolation', () => {
         'user-a'
       )
     ).rejects.toBeInstanceOf(ConflictException);
-    expect(feedbackRepository.save).not.toHaveBeenCalled();
+    expect(feedbackRepository.insert).not.toHaveBeenCalled();
   });
 
   it('returns the existing feedback when an idempotent insert races on the unique index', async () => {
@@ -198,7 +198,7 @@ describe('EstimateFeedbackService tenant isolation', () => {
       estimateId: 'estimate-final',
       actualHours: 10,
     } as EstimateFeedback;
-    (feedbackRepository.save as jest.Mock).mockRejectedValueOnce(
+    (feedbackRepository.insert as jest.Mock).mockRejectedValueOnce(
       new QueryFailedError('insert', [], { code: '23505' } as any)
     );
     (feedbackRepository.createQueryBuilder as jest.Mock).mockReturnValueOnce(
@@ -225,7 +225,7 @@ describe('EstimateFeedbackService tenant isolation', () => {
 
   it('returns conflict when an idempotent insert race reveals a different payload', async () => {
     const { service } = buildService(true);
-    (feedbackRepository.save as jest.Mock).mockRejectedValueOnce(
+    (feedbackRepository.insert as jest.Mock).mockRejectedValueOnce(
       new QueryFailedError('insert', [], { code: '23505' } as any)
     );
     (feedbackRepository.createQueryBuilder as jest.Mock).mockReturnValueOnce(

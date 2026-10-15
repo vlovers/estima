@@ -1,4 +1,4 @@
-import { IsEnum, IsOptional } from 'class-validator';
+import { IsBooleanString, IsEnum, IsOptional } from 'class-validator';
 
 export enum SortField {
   CREATED_AT = 'createdAt',
@@ -12,6 +12,11 @@ export enum SortOrder {
 }
 
 export class SortProjectTasksDto {
+  // The frontend sends this alongside sorting in the same query object.
+  @IsOptional()
+  @IsBooleanString()
+  tree?: string;
+
   @IsOptional()
   @IsEnum(SortField)
   sortBy?: SortField = SortField.CREATED_AT;

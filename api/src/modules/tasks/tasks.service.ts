@@ -76,7 +76,7 @@ export class TasksService {
           answer: '',
         })),
       });
-      const savedTask = await this.taskRepository.save(task);
+      const savedTask = await this.insertTask(task);
       // Return the full task object to ensure relations are loaded
       return this.findOne(savedTask.id, userId);
     }
@@ -109,7 +109,7 @@ export class TasksService {
       riskAnalysis: risks,
       status: TaskStatus.ESTIMATED,
     });
-    await this.taskRepository.save(parentTask);
+    await this.insertTask(parentTask);
 
     // 2. Create subtasks and their individual estimates or a single aggregate estimate
     const totalEstimate = subtasks.reduce(
@@ -130,7 +130,7 @@ export class TasksService {
           technology: createTaskDto.technology,
           experienceLevel: createTaskDto.experienceLevel,
         });
-        await this.taskRepository.save(subtask);
+        await this.insertTask(subtask);
 
         const confidence = this.calculateConfidence(subtaskData.description);
         totalConfidence += confidence;
@@ -289,7 +289,35 @@ export class TasksService {
     userId: string
   ): Promise<Task> {
     const task = await this.getTaskAndCheckPermissions(id, userId);
-    const { manualEstimate, ...taskData } = updateTaskDto;
+    const { manualEstimate } = updateTaskDto;
+    if (
+      updateTaskDto.projectId &&
+      updateTaskDto.projectId !== task.project.id
+    ) {
+      throw new BadRequestException(
+        'Task project cannot be changed through this endpoint.'
+      );
+    }
+    // Request-only AI flags are accepted by the DTO but are not entity columns.
+    const taskData = {
+      title: updateTaskDto.title,
+      description: updateTaskDto.description,
+      technology: updateTaskDto.technology,
+      experienceLevel: updateTaskDto.experienceLevel,
+      tags: updateTaskDto.tags,
+      breakdown: updateTaskDto.breakdown,
+      acceptanceCriteria: updateTaskDto.acceptanceCriteria,
+      assumptions: updateTaskDto.assumptions,
+      constraints: updateTaskDto.constraints,
+      nfrs: updateTaskDto.nfrs,
+      integrations: updateTaskDto.integrations,
+      testing: updateTaskDto.testing,
+      documentation: updateTaskDto.documentation,
+      complexityTags: updateTaskDto.complexityTags,
+      uiDesignComplexity: updateTaskDto.uiDesignComplexity,
+      needsDataMigration: updateTaskDto.needsDataMigration,
+      migrationComplexity: updateTaskDto.migrationComplexity,
+    };
 
     if (manualEstimate) {
       await this.estimatesService.createOrUpdateManualEstimate(
@@ -299,7 +327,7 @@ export class TasksService {
       );
     }
 
-    if (Object.keys(taskData).length > 0) {
+    if (Object.values(taskData).some((value) => value !== undefined)) {
       await this.taskRepository.update(id, taskData);
     }
 
@@ -414,7 +442,7 @@ export class TasksService {
           technology: task.technology,
           experienceLevel: task.experienceLevel,
         });
-        await this.taskRepository.save(subtask);
+        await this.insertTask(subtask);
 
         const confidence = this.calculateConfidence(subtaskData.description);
         totalConfidence += confidence;
@@ -517,6 +545,12 @@ export class TasksService {
     }
 
     return this.findOne(id, userId);
+  }
+
+  private async insertTask(task: Task): Promise<Task> {
+    const inserted = await this.taskRepository.insert(task);
+    task.id = inserted.identifiers[0].id;
+    return task;
   }
 
   private calculateConfidence(description: string): number {

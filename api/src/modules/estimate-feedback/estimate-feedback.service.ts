@@ -66,7 +66,9 @@ export class EstimateFeedbackService {
     });
     let savedFeedback: EstimateFeedback;
     try {
-      savedFeedback = await this.feedbackRepository.save(feedback);
+      const inserted = await this.feedbackRepository.insert(feedback);
+      feedback.id = inserted.identifiers[0].id;
+      savedFeedback = feedback;
     } catch (error) {
       if (!dto.idempotencyKey || !this.isUniqueConstraintViolation(error)) {
         throw error;

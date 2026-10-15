@@ -21,9 +21,11 @@ describe('UsersService tenant isolation', () => {
       findOneBy: jest.fn(),
       find: jest.fn(),
       create: jest.fn((value) => value as User),
-      save: jest.fn(async (value) => ({ id: 'new-user', ...value }) as User),
-      update: jest.fn(async () => ({ affected: 1 }) as any),
-      delete: jest.fn(async () => ({ affected: 1 }) as any),
+      insert: jest.fn(
+        async () => ({ identifiers: [{ id: 'new-user' }] } as any)
+      ),
+      update: jest.fn(async () => ({ affected: 1 } as any)),
+      delete: jest.fn(async () => ({ affected: 1 } as any)),
     } as unknown as jest.Mocked<Repository<User>>;
 
     service = new UsersService(userRepository);
@@ -57,9 +59,9 @@ describe('UsersService tenant isolation', () => {
   it('hashes plaintext passwords exactly once before saving users', async () => {
     userRepository.findOne.mockResolvedValue(null);
     let savedUser: User;
-    userRepository.save.mockImplementation(async (value) => {
+    userRepository.insert.mockImplementation(async (value) => {
       savedUser = value as User;
-      return { id: 'new-user', ...value } as User;
+      return { identifiers: [{ id: 'new-user' }] } as any;
     });
 
     await service.create({
@@ -68,9 +70,9 @@ describe('UsersService tenant isolation', () => {
     });
 
     expect(savedUser.password).not.toBe('password123');
-    await expect(bcrypt.compare('password123', savedUser.password)).resolves.toBe(
-      true
-    );
+    await expect(
+      bcrypt.compare('password123', savedUser.password)
+    ).resolves.toBe(true);
     await expect(
       bcrypt.compare(savedUser.password, savedUser.password)
     ).resolves.toBe(false);
@@ -80,9 +82,9 @@ describe('UsersService tenant isolation', () => {
     userRepository.findOne.mockResolvedValue(null);
     let savedUser: User;
     const trickyPassword = '$2not-a-real-bcrypt-hash';
-    userRepository.save.mockImplementation(async (value) => {
+    userRepository.insert.mockImplementation(async (value) => {
       savedUser = value as User;
-      return { id: 'new-user', ...value } as User;
+      return { identifiers: [{ id: 'new-user' }] } as any;
     });
 
     await service.create({
@@ -124,11 +126,10 @@ describe('UsersService tenant isolation', () => {
 
     const result = await service.updateOwn(
       'user-a',
-      {
-        email: 'updated@example.com',
-        password: 'new-password',
-        refreshToken: 'new-refresh-token',
-      },
+      Object.assign(
+        { email: 'updated@example.com', password: 'new-password' },
+        { refreshToken: 'new-refresh-token', id: 'user-b', isAdmin: true }
+      ),
       'user-a'
     );
 

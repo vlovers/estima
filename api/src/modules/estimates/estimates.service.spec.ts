@@ -38,7 +38,9 @@ describe('EstimatesService tenant isolation', () => {
 
     estimateRepository = {
       create: jest.fn((value) => value as Estimate),
-      save: jest.fn(async (value) => ({ id: 'estimate-a', ...value }) as Estimate),
+      insert: jest.fn(
+        async () => ({ identifiers: [{ id: 'estimate-a' }] } as any)
+      ),
       findOne: jest.fn(),
       createQueryBuilder: jest.fn(() => estimateQb as any),
     } as unknown as jest.Mocked<Repository<Estimate>>;
@@ -66,11 +68,10 @@ describe('EstimatesService tenant isolation', () => {
       'user-a'
     );
 
-    expect(taskQb.andWhere).toHaveBeenCalledWith(
-      'project."userId" = :userId',
-      { userId: 'user-a' }
-    );
-    expect(estimateRepository.save).toHaveBeenCalled();
+    expect(taskQb.andWhere).toHaveBeenCalledWith('project."userId" = :userId', {
+      userId: 'user-a',
+    });
+    expect(estimateRepository.insert).toHaveBeenCalled();
   });
 
   it('does not create an estimate for another user task', async () => {
@@ -86,7 +87,7 @@ describe('EstimatesService tenant isolation', () => {
         'user-a'
       )
     ).rejects.toBeInstanceOf(NotFoundException);
-    expect(estimateRepository.save).not.toHaveBeenCalled();
+    expect(estimateRepository.insert).not.toHaveBeenCalled();
   });
 
   it('scopes estimate list queries by project owner', async () => {
@@ -106,9 +107,9 @@ describe('EstimatesService tenant isolation', () => {
       buildQueryBuilder({ getOne: null }) as any
     );
 
-    await expect(service.findOne('estimate-b', 'user-a')).rejects.toBeInstanceOf(
-      NotFoundException
-    );
+    await expect(
+      service.findOne('estimate-b', 'user-a')
+    ).rejects.toBeInstanceOf(NotFoundException);
   });
 
   it('uses ownership-aware atomic update and delete statements', async () => {
