@@ -112,9 +112,7 @@ describe('AuthController', () => {
       'new-refresh-token',
       { httpOnly: true, secure: true, sameSite: 'lax' }
     );
-    expect(result).toEqual({
-      accessToken: 'new-access-token',
-      refreshToken: 'new-refresh-token',
-    });
+    expect(result).toEqual({ accessToken: 'new-access-token' });
+    expect(result).not.toHaveProperty('refreshToken');
   });
 });
