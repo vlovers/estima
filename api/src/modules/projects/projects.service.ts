@@ -20,16 +20,18 @@ export class ProjectsService {
     private readonly projectRepository: Repository<Project>
   ) {}
 
-  create(createProjectDto: CreateProjectDto, userId: string) {
+  async create(createProjectDto: CreateProjectDto, userId: string) {
     const project = this.projectRepository.create({
-      ...createProjectDto,
+      name: createProjectDto.name,
+      description: createProjectDto.description,
       // Ensure we never insert nulls for NOT NULL columns; honor defaults
-      complexity:
-        (createProjectDto as any).complexity ?? ProjectComplexity.MEDIUM,
-      overhead: (createProjectDto as any).overhead ?? 0,
+      complexity: createProjectDto.complexity ?? ProjectComplexity.MEDIUM,
+      overhead: createProjectDto.overhead ?? 0,
       userId,
     });
-    return this.projectRepository.save(project);
+    const inserted = await this.projectRepository.insert(project);
+    project.id = inserted.identifiers[0].id;
+    return project;
   }
 
   findAll(userId: string) {
@@ -92,8 +94,22 @@ export class ProjectsService {
         'You are not allowed to update this project'
       );
     }
-    Object.assign(project, updateProjectDto);
-    return this.projectRepository.save(project);
+    const changes = {
+      name: updateProjectDto.name,
+      description: updateProjectDto.description,
+      complexity: updateProjectDto.complexity,
+      overhead: updateProjectDto.overhead,
+    };
+    if (Object.values(changes).some((value) => value !== undefined)) {
+      const result = await this.projectRepository.update(
+        { id, userId },
+        changes
+      );
+      if (result.affected !== 1) {
+        throw new NotFoundException(`Project with ID "${id}" not found`);
+      }
+    }
+    return this.findOne(id, userId);
   }
 
   async remove(id: string, userId: string): Promise<void> {
