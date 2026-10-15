@@ -1,17 +1,15 @@
-import { createRequire } from 'node:module';
-
-const resolve = createRequire(import.meta.url).resolve;
-
 export default {
   displayName: 'api',
   testEnvironment: 'node',
   transform: {
-    '^.+\\.[tj]s$': [
-      resolve('ts-jest'),
-      {
-        tsconfig: '<rootDir>/api/tsconfig.spec.json',
+    '^.+\\.[tj]s$': ['@swc/jest', {
+      jsc: {
+        parser: { syntax: 'typescript', decorators: true },
+        transform: { legacyDecorator: true, decoratorMetadata: true },
+        target: 'es2022',
       },
-    ],
+      module: { type: 'commonjs' },
+    }],
   },
   moduleFileExtensions: ['ts', 'js', 'html'],
   rootDir: '..',
