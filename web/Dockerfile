@@ -1,6 +1,6 @@
 FROM oven/bun:1.3.2-alpine AS build
 WORKDIR /usr/src/app
-COPY package.json yarn.lock ./
+COPY package.json bun.lock ./
 RUN bun install --frozen-lockfile
 COPY . .
 RUN bun run build:web
