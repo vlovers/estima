@@ -10,6 +10,8 @@ describe('AuthService JWT configuration', () => {
     clearRefreshToken: jest.fn(),
     findOne: jest.fn(),
     findOneByEmail: jest.fn(),
+    rotateRefreshToken: jest.fn(),
+    verifyUserPassword: jest.fn(),
   } as unknown as UsersService;
 
   const buildService = (config: Record<string, string | undefined>) => {
@@ -52,13 +54,26 @@ describe('AuthService JWT configuration', () => {
     });
     expect(jwtService.signAsync).toHaveBeenNthCalledWith(
       1,
-      { sub: 'user-id', email: 'user@example.com' },
-      { secret: 'configured-access-secret', expiresIn: '10m' }
+      { sub: 'user-id', email: 'user@example.com', tokenUse: 'access' },
+      {
+        secret: 'configured-access-secret',
+        expiresIn: '10m',
+        algorithm: 'HS256',
+      }
     );
     expect(jwtService.signAsync).toHaveBeenNthCalledWith(
       2,
-      { sub: 'user-id', email: 'user@example.com' },
-      { secret: 'configured-refresh-secret', expiresIn: '10d' }
+      {
+        sub: 'user-id',
+        email: 'user@example.com',
+        tokenUse: 'refresh',
+        jti: expect.any(String),
+      },
+      {
+        secret: 'configured-refresh-secret',
+        expiresIn: '10d',
+        algorithm: 'HS256',
+      }
     );
   });
 

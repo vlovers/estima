@@ -94,9 +94,13 @@ describe('AuthController', () => {
   });
 
   it('refreshes tokens with standardized userId and refreshToken', async () => {
-    const { authService, controller } = buildController();
+    const { authService, controller, response } = buildController();
 
-    const result = await controller.refreshTokens('user-id', 'refresh-token');
+    const result = await controller.refreshTokens(
+      'user-id',
+      'refresh-token',
+      response as any
+    );
 
     expect(authService.refreshTokens).toHaveBeenCalledWith(
       'user-id',
@@ -104,7 +108,12 @@ describe('AuthController', () => {
     );
     expect(result).toEqual({
       accessToken: 'new-access-token',
-      refreshToken: 'new-refresh-token',
     });
+    expect(response.cookie).toHaveBeenCalledWith(
+      'refreshToken',
+      'new-refresh-token',
+      expect.objectContaining({ httpOnly: true, sameSite: 'lax' })
+    );
+    expect(JSON.stringify(result)).not.toContain('new-refresh-token');
   });
 });

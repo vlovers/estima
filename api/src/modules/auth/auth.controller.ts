@@ -9,7 +9,7 @@ import {
   HttpStatus,
 } from '@nestjs/common';
 import { AuthService } from './auth.service';
-import { AuthGuard } from '@nestjs/passport';
+import { LocalAuthGuard, RefreshAuthGuard } from './guards/auth-request.guards';
 import { CreateUserDto } from '../users/dto/create-user.dto';
 import { Response } from 'express';
 import { Public } from './decorators/public.decorator';
@@ -30,7 +30,7 @@ export class AuthController {
   }
 
   @Public()
-  @UseGuards(AuthGuard('local'))
+  @UseGuards(LocalAuthGuard)
   @Post('login')
   @HttpCode(HttpStatus.OK)
   async login(
@@ -43,7 +43,6 @@ export class AuthController {
       tokens.refreshToken,
       this.getRefreshCookieOptions()
     );
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { password, refreshToken, ...user } = req.user;
     return { accessToken: tokens.accessToken, user };
   }
@@ -75,13 +74,20 @@ export class AuthController {
   }
 
   @Public()
-  @UseGuards(AuthGuard('jwt-refresh'))
+  @UseGuards(RefreshAuthGuard)
   @Post('refresh')
   @HttpCode(HttpStatus.OK)
-  refreshTokens(
+  async refreshTokens(
     @GetCurrentUser('userId') userId: string,
-    @GetCurrentUser('refreshToken') refreshToken: string
+    @GetCurrentUser('refreshToken') refreshToken: string,
+    @Res({ passthrough: true }) res: Response
   ) {
-    return this.authService.refreshTokens(userId, refreshToken);
+    const tokens = await this.authService.refreshTokens(userId, refreshToken);
+    res.cookie(
+      this.refreshCookieName,
+      tokens.refreshToken,
+      this.getRefreshCookieOptions()
+    );
+    return { accessToken: tokens.accessToken };
   }
 }
