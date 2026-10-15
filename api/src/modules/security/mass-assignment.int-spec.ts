@@ -889,6 +889,19 @@ describe('Mass assignment security (disposable PostgreSQL)', () => {
     expect(rotatedCookie).toContain('HttpOnly');
     expect(rotatedCookie.split(';')[0]).not.toBe(loginCookie.split(';')[0]);
 
+    // Ensure refresh rotation changed the persisted hash, not only the cookie.
+    const [{ refreshToken: storedHash }] = await db.query(
+      'SELECT "refreshToken" FROM users WHERE email = $1',
+      [email]
+    );
+    const bcrypt = await import('bcrypt');
+    expect(
+      await bcrypt.compare(loginCookie.split(';')[0].slice('refreshToken='.length), storedHash)
+    ).toBe(false);
+    expect(
+      await bcrypt.compare(rotatedCookie.split(';')[0].slice('refreshToken='.length), storedHash)
+    ).toBe(true);
+
     await request(app.getHttpServer())
       .post('/api/auth/refresh')
       .set('Cookie', loginCookie)
