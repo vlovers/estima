@@ -65,8 +65,6 @@ jobs:
       - name: Lint
         timeout-minutes: 5
         run: bun run lint
-      - name: Verify SWC Jest transformer
-        run: node -e "console.log(require.resolve('@swc/jest'))"
       - name: Unit tests
         timeout-minutes: 8
         run: bun run test -- --parallel=1
