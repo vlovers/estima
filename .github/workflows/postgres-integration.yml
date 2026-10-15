@@ -53,7 +53,7 @@ jobs:
         run: bun run migration-test:baseline
       - name: HTTP and PostgreSQL integration tests
         timeout-minutes: 8
-        run: bun run test:api:integration
+        run: node ./node_modules/jest/bin/jest.js --config api/jest.integration.config.ts --runInBand
       - name: Remove disposable PostgreSQL
         if: always()
         run: docker rm -f "$MIGRATION_TEST_CONTAINER" || true
