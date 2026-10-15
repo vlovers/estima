@@ -16,7 +16,7 @@ are preserved for existing databases and have not been rewritten.
 CLI helper:
 
 ```bash
-yarn typeorm:legacy migration:show
+bun run typeorm:legacy migration:show
 ```
 
 Known limitation: the legacy chain is not fresh-database safe. It contains
@@ -34,13 +34,13 @@ api/src/database/baseline-migrations
 Select it explicitly:
 
 ```bash
-TYPEORM_MIGRATION_CHAIN=baseline yarn typeorm:run-migrations
+TYPEORM_MIGRATION_CHAIN=baseline bun run typeorm:run-migrations
 ```
 
 CLI helper:
 
 ```bash
-yarn typeorm:baseline migration:show
+bun run typeorm:baseline migration:show
 ```
 
 The baseline chain creates the current schema from scratch and then seeds the

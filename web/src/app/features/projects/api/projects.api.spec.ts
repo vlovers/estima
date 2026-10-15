@@ -1,6 +1,6 @@
 import { fetchProjects, fetchProject, updateProject } from './projects.api';
 import { api } from '../../../services/authApiService';
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Project } from '../../../types';
 
 // Mock the api service
@@ -12,6 +12,7 @@ vi.mock('../../../services/authApiService', () => ({
 }));
 
 describe('Projects API', () => {
+  beforeEach(() => vi.clearAllMocks());
   it('should call api.get without params when fetchProjects is called', async () => {
     const mockResponse = { data: [] };
     (api.get as vi.Mock).mockResolvedValue(mockResponse);
@@ -28,7 +29,9 @@ describe('Projects API', () => {
 
     await fetchProject(projectId);
 
-    expect(api.get).toHaveBeenCalledWith(`/projects/${projectId}?tree=true`);
+    expect(api.get).toHaveBeenCalledWith(`/projects/${projectId}`, {
+      params: new URLSearchParams('tree=true'),
+    });
   });
 
   it('should call api.patch with correct data when updateProject is called', async () => {

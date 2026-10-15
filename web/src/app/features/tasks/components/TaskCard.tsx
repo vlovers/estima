@@ -347,7 +347,9 @@ function ClarificationForm({ task }: { task: Task }) {
       queryClient.invalidateQueries({ queryKey: ['project'] });
       try {
         localStorage.setItem(`clarify-open-${task.id}`, 'false');
-      } catch {}
+      } catch {
+        // Local storage may be unavailable; keep the UI functional.
+      }
       setOpen(false);
     },
     onError: (error: any) => {
@@ -371,14 +373,18 @@ function ClarificationForm({ task }: { task: Task }) {
       if (saved === 'true' || saved === 'false') {
         setOpen(saved === 'true');
       }
-    } catch {}
+    } catch {
+        // Local storage may be unavailable; keep the UI functional.
+      }
   }, [task.id]);
   const toggleOpen = () => {
     setOpen((v) => {
       const nv = !v;
       try {
         localStorage.setItem(`clarify-open-${task.id}`, String(nv));
-      } catch {}
+      } catch {
+        // Local storage may be unavailable; keep the UI functional.
+      }
       return nv;
     });
   };

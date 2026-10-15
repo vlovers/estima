@@ -1,0 +1,103 @@
+name: PostgreSQL integration validation
+
+on:
+  pull_request:
+    branches: [develop]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  postgres-integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      CI: "true"
+      NX_DAEMON: "false"
+      NX_ISOLATE_PLUGINS: "false"
+      MIGRATION_VALIDATION_TARGET: disposable-postgres-migration-validation
+      MIGRATION_TEST_CONTAINER: ai-estimates-migration-test-db
+      MIGRATION_TEST_HOST: 127.0.0.1
+      MIGRATION_TEST_PORT: "55432"
+      MIGRATION_TEST_USERNAME: ai_estimator_migration_test
+      MIGRATION_TEST_PASSWORD: ai_estimator_migration_test_password
+      MIGRATION_TEST_ADMIN_DATABASE: ai_estimator_migration_admin
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.2
+      - name: Install locked dependencies
+        run: bun ci --ignore-scripts
+      - name: Start disposable PostgreSQL 17
+        run: |
+          docker run -d --name "$MIGRATION_TEST_CONTAINER" \
+            -e POSTGRES_DB="$MIGRATION_TEST_ADMIN_DATABASE" \
+            -e POSTGRES_USER="$MIGRATION_TEST_USERNAME" \
+            -e POSTGRES_PASSWORD="$MIGRATION_TEST_PASSWORD" \
+            -p 127.0.0.1:55432:5432 postgres:17
+          for attempt in $(seq 1 45); do
+            if docker exec "$MIGRATION_TEST_CONTAINER" pg_isready -U "$MIGRATION_TEST_USERNAME" -d "$MIGRATION_TEST_ADMIN_DATABASE"; then
+              exit 0
+            fi
+            sleep 2
+          done
+          docker logs "$MIGRATION_TEST_CONTAINER"
+          exit 1
+      - name: Validate baseline migrations on disposable database
+        timeout-minutes: 7
+        run: bun run migration-test:baseline
+      - name: HTTP and PostgreSQL integration tests
+        timeout-minutes: 8
+        run: node ./node_modules/jest/bin/jest.js --config api/jest.integration.config.ts --runInBand
+      - name: Prepare isolated runtime database
+        timeout-minutes: 3
+        run: |
+          docker exec "$MIGRATION_TEST_CONTAINER" psql -U "$MIGRATION_TEST_USERNAME" -d "$MIGRATION_TEST_ADMIN_DATABASE" -v ON_ERROR_STOP=1 -c "CREATE DATABASE estima_runtime_smoke"
+          POSTGRES_HOST=127.0.0.1 POSTGRES_PORT=55432 \
+            POSTGRES_USER="$MIGRATION_TEST_USERNAME" POSTGRES_PASSWORD="$MIGRATION_TEST_PASSWORD" \
+            POSTGRES_DB=estima_runtime_smoke \
+            bun run typeorm:baseline migration:run
+      - name: Build Docker runtime images
+        timeout-minutes: 12
+        run: |
+          docker build -f api/Dockerfile -t estima-api:runtime-smoke .
+      - name: Smoke-test API container
+        timeout-minutes: 4
+        run: |
+          docker run -d --name estima-api-runtime-smoke --network host \
+            -e PORT=13000 -e POSTGRES_HOST=127.0.0.1 -e POSTGRES_PORT=55432 \
+            -e POSTGRES_USER="$MIGRATION_TEST_USERNAME" -e POSTGRES_PASSWORD="$MIGRATION_TEST_PASSWORD" \
+            -e POSTGRES_DB=estima_runtime_smoke \
+            -e JWT_ACCESS_SECRET=ci-only-insecure-smoke-secret \
+            -e JWT_REFRESH_SECRET=ci-only-insecure-smoke-refresh-secret \
+            -e OPENAI_API_KEY=ci-only-inert-placeholder \
+            estima-api:runtime-smoke
+          passed=0
+          for attempt in $(seq 1 40); do
+            if curl --fail --silent --show-error http://127.0.0.1:13000/docs-json -o /tmp/estima-runtime-openapi.json && \
+               node -e "const d=require('/tmp/estima-runtime-openapi.json'); if (!d.openapi || !d.paths) process.exit(1)" && \
+               curl --fail --silent http://127.0.0.1:13000/docs-json -o /dev/null; then
+              passed=1
+              break
+            fi
+            if [ "$(docker inspect -f '{{.State.Running}}' estima-api-runtime-smoke)" != "true" ]; then
+              docker logs estima-api-runtime-smoke
+              exit 1
+            fi
+            sleep 2
+          done
+          if [ "$passed" != 1 ]; then
+            docker logs estima-api-runtime-smoke
+            exit 1
+          fi
+      - name: Remove runtime smoke containers
+        if: always()
+        run: docker rm -f estima-api-runtime-smoke || true
+      - name: Remove disposable PostgreSQL
+        if: always()
+        run: docker rm -f "$MIGRATION_TEST_CONTAINER" || true
