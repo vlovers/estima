@@ -6,7 +6,7 @@
     "start:api": "node ./node_modules/nx/bin/nx.js serve api",
     "start:web": "node ./node_modules/nx/bin/nx.js serve web",
     "build:api": "node ./node_modules/nx/bin/nx.js build api",
-    "build:web": "node ./node_modules/nx/bin/nx.js build web",
+    "build:web": "node ./node_modules/vite/bin/vite.js build --config web/vite.config.ts",
     "typeorm": "TS_NODE_PROJECT=api/tsconfig.app.json node -r ts-node/register -r tsconfig-paths/register ./node_modules/typeorm/cli.js --dataSource api/src/database/data-source.ts",
     "typeorm:legacy": "TYPEORM_MIGRATION_CHAIN=legacy bun run typeorm",
     "typeorm:baseline": "TYPEORM_MIGRATION_CHAIN=baseline bun run typeorm",
