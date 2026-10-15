@@ -97,11 +97,10 @@ bun ci
 ### Backend (API)
 
 1.  **Set Up Environment Variables:**
-    Navigate to the `api` directory and create a `.env` file by copying the example:
+    From the repository root, create `api/.env` from the template:
 
     ```bash
-    cd api
-    cp .env.example .env
+    cp api/.env.example api/.env
     ```
 
     Open the `.env` file and fill in the required environment variables, such as your database credentials and JWT secrets.
@@ -110,7 +109,7 @@ bun ci
     From the root of the project, start the PostgreSQL database using Docker Compose:
 
     ```bash
-    docker compose up -d
+    docker compose up -d postgres
     ```
 
 3.  **Run Database Migrations:**
@@ -173,8 +172,9 @@ The root package scripts also provide:
 ```bash
 bun run lint
 bun run test
-bun run test:api:integration
+bun run migration-test:db:up
 bun run migration-test:baseline
+node ./node_modules/jest/bin/jest.js --config api/jest.integration.config.ts --runInBand
 ```
 
 For new databases, use the baseline migration chain. Runtime validates the exact expected migration history and never synchronizes the database automatically. Database integration and migration validation use a disposable PostgreSQL test setup; consult [migration notes](api/src/database/MIGRATIONS.md) before running migrations against existing databases.
