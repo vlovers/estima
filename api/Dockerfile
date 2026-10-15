@@ -1,41 +1,20 @@
-# Stage 1: Development Dependencies
-FROM node:20-alpine AS deps
+# Bun for dependency installation, build and application runtime.
+FROM oven/bun:1.3.2-alpine AS deps
 WORKDIR /usr/src/app
-
-# Copy package.json and yarn.lock from the root
 COPY package.json yarn.lock ./
+RUN bun install --frozen-lockfile
 
-# Install all dependencies
-RUN yarn install --frozen-lockfile
-
-# Stage 2: Builder
-FROM node:20-alpine AS builder
+FROM oven/bun:1.3.2-alpine AS builder
 WORKDIR /usr/src/app
-
-# Copy dependencies from the 'deps' stage
 COPY --from=deps /usr/src/app/node_modules ./node_modules
-
-# Copy the entire monorepo source code
 COPY . .
+RUN bun run build:api
 
-# Build the 'api' application
-RUN npx nx build api --prod
-
-# Stage 3: Production
-FROM node:20-alpine AS production
-
-# Set environment variable
+FROM oven/bun:1.3.2-alpine AS production
 ENV NODE_ENV=production
-
 WORKDIR /usr/src/app
-
-# Copy the built application and production dependencies
-COPY --from=builder /usr/src/app/dist/api .
+COPY --from=builder /usr/src/app/dist/api ./
 COPY --from=builder /usr/src/app/node_modules ./node_modules
-COPY --from=builder /usr/src/app/package.json .
-
-# Expose the port the app runs on
+COPY --from=builder /usr/src/app/package.json ./
 EXPOSE 3000
-
-# Command to run the application
-CMD ["node", "main.js"]
+CMD ["bun", "main.js"]
