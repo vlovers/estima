@@ -35,7 +35,9 @@ jobs:
           path: bun.lock
           if-no-files-found: error
       - name: Install dependencies
-        run: bun install --frozen-lockfile
+        run: bun install --frozen-lockfile --ignore-scripts
+      - name: Verify native bcrypt
+        run: bun -e "const bcrypt = require('bcrypt'); const hash = bcrypt.hashSync('test', 4); if (!bcrypt.compareSync('test', hash)) process.exit(1)"
       - name: Lint
         run: bun run lint
       - name: Unit tests
