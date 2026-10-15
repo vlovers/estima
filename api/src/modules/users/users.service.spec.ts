@@ -1,8 +1,8 @@
 import { ConflictException, NotFoundException } from '@nestjs/common';
-import { Repository } from 'typeorm';
+import { QueryFailedError, Repository } from 'typeorm';
 import { User } from './entities/user.entity';
 import { UsersService } from './users.service';
-import * as bcrypt from 'bcrypt';
+import { verifyPassword } from '../auth/password-hashing';
 
 describe('UsersService tenant isolation', () => {
   let userRepository: jest.Mocked<Repository<User>>;
@@ -71,10 +71,10 @@ describe('UsersService tenant isolation', () => {
 
     expect(savedUser.password).not.toBe('password123');
     await expect(
-      bcrypt.compare('password123', savedUser.password)
+      verifyPassword('password123', savedUser.password)
     ).resolves.toBe(true);
     await expect(
-      bcrypt.compare(savedUser.password, savedUser.password)
+      verifyPassword(savedUser.password, savedUser.password)
     ).resolves.toBe(false);
   });
 
@@ -94,7 +94,7 @@ describe('UsersService tenant isolation', () => {
 
     expect(savedUser.password).not.toBe(trickyPassword);
     await expect(
-      bcrypt.compare(trickyPassword, savedUser.password)
+      verifyPassword(trickyPassword, savedUser.password)
     ).resolves.toBe(true);
   });
 
@@ -167,5 +167,29 @@ describe('UsersService tenant isolation', () => {
     await expect(
       service.removeOwnByEmail('b@example.com', 'user-a')
     ).rejects.toBeInstanceOf(NotFoundException);
+  });
+  it('maps the email uniqueness race to a controlled conflict', async () => {
+    userRepository.findOne.mockResolvedValue(null);
+    userRepository.insert.mockRejectedValueOnce(
+      new QueryFailedError('INSERT users', [], {
+        code: '23505',
+        constraint: 'UQ_97672ac88f789774dd47f7c8be3',
+      } as any)
+    );
+    await expect(
+      service.create({ email: 'race@example.com', password: 'password123' })
+    ).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it('preserves unexpected database errors instead of misreporting an email conflict', async () => {
+    userRepository.findOne.mockResolvedValue(null);
+    const error = new QueryFailedError('INSERT users', [], {
+      code: '23505',
+      constraint: 'another_constraint',
+    } as any);
+    userRepository.insert.mockRejectedValueOnce(error);
+    await expect(
+      service.create({ email: 'race@example.com', password: 'password123' })
+    ).rejects.toBe(error);
   });
 });
