@@ -65,6 +65,12 @@ jobs:
       - name: Lint
         timeout-minutes: 5
         run: bun run lint
+      - name: Diagnose Jest resolver
+        run: |
+          ls -la api/jest-transformer.cjs
+          node -e "const fs=require('fs'); console.log('transformer exists:', fs.existsSync('api/jest-transformer.cjs')); console.log('jest:', require.resolve('jest')); console.log('resolver:', require.resolve('jest-resolve'))"
+          node ./node_modules/jest/bin/jest.js --config api/jest.config.ts --showConfig > /tmp/estima-jest-config.json
+          head -c 1000 /tmp/estima-jest-config.json
       - name: Unit tests
         timeout-minutes: 8
         run: bun run test -- --parallel=1
