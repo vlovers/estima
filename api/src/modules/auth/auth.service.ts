@@ -2,6 +2,7 @@ import { ForbiddenException, Injectable } from '@nestjs/common';
 import { UsersService } from '../users/users.service';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
+import { randomUUID } from 'crypto';
 import { CreateUserDto } from '../users/dto/create-user.dto';
 import { ConfigService } from '@nestjs/config';
 import {
@@ -90,7 +91,7 @@ export class AuthService {
         }
       ),
       this.jwtService.signAsync(
-        { sub: userId, email },
+        { sub: userId, email, jti: randomUUID() },
         {
           secret: refreshSecret,
           expiresIn: refreshExpiresIn,
