@@ -49,7 +49,8 @@ jobs:
         run: |
           ROLLUP_VERSION=$(node -p "require('./node_modules/rollup/package.json').version")
           ESBUILD_VERSION=$(node -p "require('./node_modules/esbuild/package.json').version")
-          bun add --optional --ignore-scripts @nx/nx-linux-x64-gnu@21.3.2 @swc/core-linux-x64-gnu@1.5.29 "@rollup/rollup-linux-x64-gnu@$ROLLUP_VERSION" "@esbuild/linux-x64@$ESBUILD_VERSION"
+          UNRS_VERSION=$(node -p "require('./node_modules/unrs-resolver/package.json').version")
+          bun add --optional --ignore-scripts @nx/nx-linux-x64-gnu@21.3.2 @swc/core-linux-x64-gnu@1.5.29 "@rollup/rollup-linux-x64-gnu@$ROLLUP_VERSION" "@esbuild/linux-x64@$ESBUILD_VERSION" "@unrs/resolver-binding-linux-x64-gnu@$UNRS_VERSION"
           test -d node_modules/@nx/nx-linux-x64-gnu
           ls -la node_modules/@nx/nx-linux-x64-gnu
       - name: Diagnose Nx native loading
@@ -68,6 +69,7 @@ jobs:
       - name: Diagnose Jest resolver
         run: |
           ls -la api/jest-transformer.cjs
+          node -e "const {Resolver}=require('unrs-resolver'); console.log('unrs resolver:', typeof Resolver)"
           node -e "const fs=require('fs'); console.log('transformer exists:', fs.existsSync('api/jest-transformer.cjs')); console.log('jest:', require.resolve('jest')); console.log('resolver:', require.resolve('jest-resolve'))"
           node ./node_modules/jest/bin/jest.js --config api/jest.config.ts --showConfig > /tmp/estima-jest-config.json
           head -c 1000 /tmp/estima-jest-config.json
