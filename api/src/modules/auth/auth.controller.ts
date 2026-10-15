@@ -78,10 +78,17 @@ export class AuthController {
   @UseGuards(AuthGuard('jwt-refresh'))
   @Post('refresh')
   @HttpCode(HttpStatus.OK)
-  refreshTokens(
+  async refreshTokens(
     @GetCurrentUser('userId') userId: string,
-    @GetCurrentUser('refreshToken') refreshToken: string
+    @GetCurrentUser('refreshToken') refreshToken: string,
+    @Res({ passthrough: true }) res: Response
   ) {
-    return this.authService.refreshTokens(userId, refreshToken);
+    const tokens = await this.authService.refreshTokens(userId, refreshToken);
+    res.cookie(
+      this.refreshCookieName,
+      tokens.refreshToken,
+      this.getRefreshCookieOptions()
+    );
+    return tokens;
   }
 }
