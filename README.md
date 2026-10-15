@@ -1,4 +1,29 @@
-# AI Estimates Monorepo
+# Estima — AI-assisted software estimation
+
+A full-stack TypeScript application for organizing development projects and tasks and generating AI-assisted time estimates.
+
+> **Status:** Active development. Public demo and screenshots are not yet available.
+
+## Architecture at a glance
+
+```text
+React + Mantine frontend
+         |
+         v
+     NestJS API ---- AI estimation integration
+         |
+         v
+  TypeORM / PostgreSQL
+```
+
+This is a conceptual architecture diagram, not a deployment topology.
+
+## Engineering highlights
+
+- JWT-based authentication and token lifecycle handling.
+- Explicit TypeORM migrations and schema validation workflows.
+- Disposable PostgreSQL environment for migration smoke tests and HTTP integration tests.
+- Separate Nx targets for API and web development, builds, tests, and linting.
 
 A full-stack application designed to provide AI-powered time estimates for software development tasks. This monorepo contains the NestJS backend API and the React frontend application, managed with Nx.
 
@@ -52,7 +77,7 @@ Before you begin, ensure you have the following installed on your system:
 ### 1. Clone the Repository
 
 ```bash
-git clone https://https://github.com/vlovers/estima.git
+git clone https://github.com/vlovers/estima.git
 cd estima
 ```
 
@@ -84,7 +109,7 @@ yarn install
     From the root of the project, start the PostgreSQL database using Docker Compose:
 
     ```bash
-    docker-compose up -d
+    docker compose up -d
     ```
 
 3.  **Run Database Migrations:**
@@ -127,14 +152,14 @@ Alternatively, you can run the entire application stack using Docker Compose.
     From the root of the project, run the following command to build the images and start the containers in detached mode:
 
     ```bash
-    docker-compose up --build -d
+    docker compose up --build -d
     ```
 
 3.  **Run Database Migrations:**
     Once the containers are running, execute the database migrations inside the `api` container:
 
     ```bash
-    docker-compose exec api yarn typeorm:run-migrations
+    docker compose exec api yarn typeorm:run-migrations
     ```
 
     The application will be available at `http://localhost` (the web frontend) and the API at `http://localhost:3000`.
@@ -143,8 +168,25 @@ Alternatively, you can run the entire application stack using Docker Compose.
     To stop and remove the containers, run:
 
     ```bash
-    docker-compose down
+    docker compose down
     ```
+
+---
+
+## Validation and tests
+
+The root package scripts also provide:
+
+```bash
+yarn lint
+yarn test
+yarn test:api:integration
+yarn migration-test:baseline
+```
+
+Database integration and migration validation use a disposable PostgreSQL test setup; consult [migration notes](api/src/database/MIGRATIONS.md) before running migrations against existing databases.
+
+> **Setup note:** These instructions should be validated in a clean development environment before deployment. The Docker Compose host ports are bound to localhost.
 
 ---
 
