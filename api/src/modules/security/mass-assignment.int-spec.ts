@@ -895,12 +895,14 @@ describe('Mass assignment security (disposable PostgreSQL)', () => {
       [email]
     );
     const bcrypt = await import('bcrypt');
-    expect(
-      await bcrypt.compare(loginCookie.split(';')[0].slice('refreshToken='.length), storedHash)
-    ).toBe(false);
-    expect(
-      await bcrypt.compare(rotatedCookie.split(';')[0].slice('refreshToken='.length), storedHash)
-    ).toBe(true);
+    const { createHash } = await import('crypto');
+    const hashToken = (cookie: string) =>
+      createHash('sha256')
+        .update(cookie.split(';')[0].slice('refreshToken='.length))
+        .digest('hex');
+    expect(storedHash).toMatch(/^v2:\\$2[aby]\\$/);
+    expect(await bcrypt.compare(hashToken(loginCookie), storedHash.slice(3))).toBe(false);
+    expect(await bcrypt.compare(hashToken(rotatedCookie), storedHash.slice(3))).toBe(true);
 
     await request(app.getHttpServer())
       .post('/api/auth/refresh')
