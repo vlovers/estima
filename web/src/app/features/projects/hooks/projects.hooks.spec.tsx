@@ -65,7 +65,7 @@ describe('Project Hooks', () => {
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
-    expect(projectsApi.fetchProject).toHaveBeenCalledWith('1');
+    expect(projectsApi.fetchProject).toHaveBeenCalledWith('1', undefined, undefined);
     expect(result.current.data).toEqual(mockProject);
   });
 
