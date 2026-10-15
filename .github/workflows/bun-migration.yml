@@ -47,7 +47,8 @@ jobs:
       - name: Restore Nx Linux native binary
         timeout-minutes: 3
         run: |
-          bun add --optional --ignore-scripts @nx/nx-linux-x64-gnu@21.3.2
+          ROLLUP_VERSION=$(node -p "require('./node_modules/rollup/package.json').version")
+          bun add --optional --ignore-scripts @nx/nx-linux-x64-gnu@21.3.2 @swc/core-linux-x64-gnu@1.5.29 "@rollup/rollup-linux-x64-gnu@$ROLLUP_VERSION"
           test -d node_modules/@nx/nx-linux-x64-gnu
           ls -la node_modules/@nx/nx-linux-x64-gnu
       - name: Diagnose Nx native loading
