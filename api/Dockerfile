@@ -1,7 +1,7 @@
 # Bun for dependency installation, build and application runtime.
 FROM oven/bun:1.3.2-alpine AS deps
 WORKDIR /usr/src/app
-COPY package.json yarn.lock ./
+COPY package.json bun.lock ./
 RUN bun install --frozen-lockfile
 
 FROM oven/bun:1.3.2-alpine AS builder
