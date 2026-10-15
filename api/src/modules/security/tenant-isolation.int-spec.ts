@@ -1,4 +1,5 @@
-import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { INestApplication } from '@nestjs/common';
+import { createAppValidationPipe } from '../../validation.pipe';
 import { Test, TestingModule } from '@nestjs/testing';
 import { DataSource } from 'typeorm';
 import request from 'supertest';
@@ -283,7 +284,7 @@ const createTestingApp = async (): Promise<INestApplication> => {
   const app = moduleFixture.createNestApplication();
   app.use(cookieParser());
   app.setGlobalPrefix('api');
-  app.useGlobalPipes(new ValidationPipe());
+  app.useGlobalPipes(createAppValidationPipe());
   await app.init();
   return app;
 };

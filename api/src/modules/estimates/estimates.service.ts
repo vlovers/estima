@@ -59,7 +59,9 @@ export class EstimatesService {
     };
 
     const estimate = this.estimateRepository.create(estimateData);
-    return this.estimateRepository.save(estimate);
+    const inserted = await this.estimateRepository.insert(estimate);
+    estimate.id = inserted.identifiers[0].id;
+    return estimate;
   }
 
   async addManagerExplanation(
@@ -106,15 +108,31 @@ export class EstimatesService {
     updateEstimateDto: UpdateEstimateDto,
     userId: string
   ) {
-    const { taskId, userId: _ignoredUserId, ...estimateUpdateDto } =
-      updateEstimateDto;
-    void _ignoredUserId;
+    const { taskId } = updateEstimateDto;
 
     if (taskId) {
       await this.ensureTaskOwnedByUser(taskId, userId);
     }
 
-    const result = await this.ownedUpdate(id, userId, estimateUpdateDto);
+    const changes = {
+      finalEstimate: updateEstimateDto.finalEstimate,
+      manualEstimate: updateEstimateDto.manualEstimate,
+      source: updateEstimateDto.source,
+      confidence: updateEstimateDto.confidence,
+      explanation: updateEstimateDto.explanation,
+      managerExplanation: updateEstimateDto.managerExplanation,
+      p10: updateEstimateDto.p10,
+      p50: updateEstimateDto.p50,
+      p90: updateEstimateDto.p90,
+      topDown: updateEstimateDto.topDown,
+      bottomUp: updateEstimateDto.bottomUp,
+      divergencePct: updateEstimateDto.divergencePct,
+      logs: updateEstimateDto.logs,
+    };
+    if (!Object.values(changes).some((value) => value !== undefined)) {
+      return this.findOne(id, userId);
+    }
+    const result = await this.ownedUpdate(id, userId, changes);
 
     if (result.affected === 0) {
       throw new NotFoundException(`Estimate with id ${id} not found`);
@@ -172,7 +190,9 @@ export class EstimatesService {
       manualEstimate: hours,
       source: EstimateSource.MANUAL,
     });
-    return this.estimateRepository.save(newEstimate);
+    const inserted = await this.estimateRepository.insert(newEstimate);
+    newEstimate.id = inserted.identifiers[0].id;
+    return newEstimate;
   }
 
   private async ensureTaskOwnedByUser(

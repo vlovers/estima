@@ -35,11 +35,12 @@ export class UsersService {
     const hashedPassword = await this.hashPassword(password);
 
     const user = this.userRepository.create({
-      ...createUserDto,
+      email,
       password: hashedPassword,
     });
-    const savedUser = await this.userRepository.save(user);
-    return this.toSafeUser(savedUser);
+    const inserted = await this.userRepository.insert(user);
+    user.id = inserted.identifiers[0].id;
+    return this.toSafeUser(user);
   }
 
   async findOneByEmail(email: string): Promise<User | undefined> {
@@ -68,7 +69,11 @@ export class UsersService {
     return this.toSafeUser(user);
   }
 
-  async update(id: string, updateUserDto: UpdateUserDto) {
+  // Internal authentication updates may write credentials; the profile path below cannot.
+  async update(
+    id: string,
+    updateUserDto: Partial<Pick<User, 'email' | 'password' | 'refreshToken'>>
+  ) {
     const updateData = await this.prepareUserUpdate(updateUserDto);
     await this.userRepository.update(id, updateData);
     return this.findOne(id);
@@ -92,13 +97,13 @@ export class UsersService {
       throw new NotFoundException(`User with id ${id} not found`);
     }
 
-    const { refreshToken, password, ...safeUpdateDto } = updateUserDto;
-    void refreshToken;
-    void password;
-
-    const result = await this.userRepository.update(id, safeUpdateDto);
-    if (result.affected === 0) {
-      throw new NotFoundException(`User with id ${id} not found`);
+    if (updateUserDto.email !== undefined) {
+      const result = await this.userRepository.update(id, {
+        email: updateUserDto.email,
+      });
+      if (result.affected === 0) {
+        throw new NotFoundException(`User with id ${id} not found`);
+      }
     }
 
     const user = await this.findOneOrThrow(id);
@@ -147,15 +152,14 @@ export class UsersService {
   }
 
   private async prepareUserUpdate(
-    updateUserDto: UpdateUserDto
-  ): Promise<UpdateUserDto> {
-    if (!updateUserDto.password) {
-      return updateUserDto;
-    }
-
+    updateUserDto: Partial<Pick<User, 'email' | 'password' | 'refreshToken'>>
+  ): Promise<Partial<Pick<User, 'email' | 'password' | 'refreshToken'>>> {
     return {
-      ...updateUserDto,
-      password: await this.hashPassword(updateUserDto.password),
+      email: updateUserDto.email,
+      refreshToken: updateUserDto.refreshToken,
+      password: updateUserDto.password
+        ? await this.hashPassword(updateUserDto.password)
+        : undefined,
     };
   }
 
