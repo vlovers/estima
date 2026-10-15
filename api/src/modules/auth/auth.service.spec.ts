@@ -57,7 +57,7 @@ describe('AuthService JWT configuration', () => {
     );
     expect(jwtService.signAsync).toHaveBeenNthCalledWith(
       2,
-      { sub: 'user-id', email: 'user@example.com' },
+      { sub: 'user-id', email: 'user@example.com', jti: expect.any(String) },
       { secret: 'configured-refresh-secret', expiresIn: '10d' }
     );
   });
