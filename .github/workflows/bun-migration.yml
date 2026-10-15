@@ -65,12 +65,8 @@ jobs:
       - name: Lint
         timeout-minutes: 5
         run: bun run lint
-      - name: Restore Jest TypeScript preset
-        run: |
-          if ! node -e "require.resolve('ts-jest')"; then
-            bun add --dev --ignore-scripts ts-jest@29.4.14
-          fi
-          node -e "console.log('ts-jest:', require.resolve('ts-jest'))"
+      - name: Verify SWC Jest transformer
+        run: node -e "console.log(require.resolve('@swc/jest'))"
       - name: Unit tests
         timeout-minutes: 8
         run: bun run test -- --parallel=1
