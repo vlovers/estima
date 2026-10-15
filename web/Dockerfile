@@ -1,7 +1,7 @@
 FROM oven/bun:1.3.2-alpine AS build
 WORKDIR /usr/src/app
 COPY package.json bun.lock ./
-RUN bun install --frozen-lockfile
+RUN bun install --frozen-lockfile --ignore-scripts
 COPY . .
 RUN bun run build:web
 
