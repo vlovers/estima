@@ -602,7 +602,8 @@ describe('Runtime database safety and tenant isolation (PostgreSQL integration)'
       .expect(200)
       .expect((response) => {
         expect(response.body.accessToken).toEqual(expect.any(String));
-        expect(response.body.refreshToken).toEqual(expect.any(String));
+        expect(response.body.refreshToken).toBeUndefined();
+        expect(firstCookie(response.headers['set-cookie'])).toContain('refreshToken=');
       });
 
     const projectCountBefore = await countRows(dataSource, 'projects');
