@@ -859,4 +859,54 @@ describe('Mass assignment security (disposable PostgreSQL)', () => {
     expect(stored.refreshToken).toBeNull();
     expect(await snapshotForeignVictims()).toStrictEqual(before);
   });
+
+  it('rotates HttpOnly refresh cookies across login, refresh and logout', async () => {
+    const email = `cookie-rotation-${randomUUID()}@example.com`;
+    const password = 'integration-cookie-password-123';
+    await request(app.getHttpServer())
+      .post('/api/auth/register')
+      .send({ email, password })
+      .expect(201);
+
+    const login = await request(app.getHttpServer())
+      .post('/api/auth/login')
+      .send({ email, password })
+      .expect(200);
+    expect(login.body.accessToken).toEqual(expect.any(String));
+    expect(login.body).not.toHaveProperty('refreshToken');
+    const loginCookie = login.headers['set-cookie']?.[0] as string;
+    expect(loginCookie).toContain('refreshToken=');
+    expect(loginCookie).toContain('HttpOnly');
+    expect(loginCookie).toContain('SameSite=Lax');
+
+    const refreshed = await request(app.getHttpServer())
+      .post('/api/auth/refresh')
+      .set('Cookie', loginCookie)
+      .expect(200);
+    expect(refreshed.body).toEqual({ accessToken: expect.any(String) });
+    const rotatedCookie = refreshed.headers['set-cookie']?.[0] as string;
+    expect(rotatedCookie).toContain('refreshToken=');
+    expect(rotatedCookie).toContain('HttpOnly');
+    expect(rotatedCookie.split(';')[0]).not.toBe(loginCookie.split(';')[0]);
+
+    await request(app.getHttpServer())
+      .post('/api/auth/refresh')
+      .set('Cookie', loginCookie)
+      .expect(403);
+
+    const logout = await request(app.getHttpServer())
+      .post('/api/auth/logout')
+      .auth(refreshed.body.accessToken, { type: 'bearer' })
+      .set('Cookie', rotatedCookie)
+      .expect(200);
+    expect(logout.body).toEqual({ success: true });
+    expect(logout.headers['set-cookie']?.[0]).toContain('refreshToken=');
+
+    await request(app.getHttpServer())
+      .post('/api/auth/refresh')
+      .set('Cookie', rotatedCookie)
+      .expect(403);
+  });
+
+
 });
