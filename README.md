@@ -24,6 +24,7 @@ This is a conceptual architecture diagram, not a deployment topology.
 - Explicit TypeORM migrations and schema validation workflows.
 - Disposable PostgreSQL environment for migration smoke tests and HTTP integration tests.
 - Separate Nx targets for API and web development, builds, tests, and linting.
+- Deterministic calibration simulation covering underestimation, overestimation, outliers, tenant differences, and changing conditions (`yarn simulate:calibration`).
 
 A full-stack application designed to provide AI-powered time estimates for software development tasks. This monorepo contains the NestJS backend API and the React frontend application, managed with Nx.
 
@@ -116,7 +117,7 @@ yarn install
     To set up the database schema, run the TypeORM migrations:
 
     ```bash
-    yarn typeorm:run-migrations
+    TYPEORM_MIGRATION_CHAIN=baseline yarn typeorm:run-migrations
     ```
 
 4.  **Start the API Server:**
@@ -184,7 +185,7 @@ yarn test:api:integration
 yarn migration-test:baseline
 ```
 
-Database integration and migration validation use a disposable PostgreSQL test setup; consult [migration notes](api/src/database/MIGRATIONS.md) before running migrations against existing databases.
+For new databases, use the baseline migration chain. The Docker API container reads `TYPEORM_MIGRATION_CHAIN=baseline` from `api/.env` when it is configured using `api/.env.example`. Database integration and migration validation use a disposable PostgreSQL test setup; consult [migration notes](api/src/database/MIGRATIONS.md) before running migrations against existing databases.
 
 > **Setup note:** These instructions should be validated in a clean development environment before deployment. The Docker Compose host ports are bound to localhost.
 
