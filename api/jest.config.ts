@@ -3,7 +3,7 @@ export default {
   testEnvironment: 'node',
   transform: {
     '^.+\\.[tj]s$': [
-      'ts-jest',
+      require.resolve('ts-jest'),
       {
         tsconfig: '<rootDir>/api/tsconfig.spec.json',
       },
