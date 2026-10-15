@@ -11,7 +11,7 @@ permissions:
 jobs:
   postgres-integration:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 35
     env:
       CI: "true"
       NX_DAEMON: "false"
@@ -54,6 +54,53 @@ jobs:
       - name: HTTP and PostgreSQL integration tests
         timeout-minutes: 8
         run: node ./node_modules/jest/bin/jest.js --config api/jest.integration.config.ts --runInBand
+      - name: Prepare isolated runtime database
+        timeout-minutes: 3
+        run: |
+          docker exec "$MIGRATION_TEST_CONTAINER" psql -U "$MIGRATION_TEST_USERNAME" -d "$MIGRATION_TEST_ADMIN_DATABASE" -v ON_ERROR_STOP=1 -c "CREATE DATABASE estima_runtime_smoke"
+          POSTGRES_HOST=127.0.0.1 POSTGRES_PORT=55432 \
+            POSTGRES_USER="$MIGRATION_TEST_USERNAME" POSTGRES_PASSWORD="$MIGRATION_TEST_PASSWORD" \
+            POSTGRES_DB=estima_runtime_smoke \
+            bun run typeorm:baseline migration:run
+      - name: Build Docker runtime images
+        timeout-minutes: 12
+        run: |
+          docker build -f api/Dockerfile -t estima-api:runtime-smoke .
+          docker build -f web/Dockerfile -t estima-web:runtime-smoke .
+      - name: Smoke-test API and web containers
+        timeout-minutes: 4
+        run: |
+          docker run -d --name estima-api-runtime-smoke --network host \
+            -e PORT=13000 -e POSTGRES_HOST=127.0.0.1 -e POSTGRES_PORT=55432 \
+            -e POSTGRES_USER="$MIGRATION_TEST_USERNAME" -e POSTGRES_PASSWORD="$MIGRATION_TEST_PASSWORD" \
+            -e POSTGRES_DB=estima_runtime_smoke \
+            -e JWT_ACCESS_SECRET=ci-only-insecure-smoke-secret \
+            -e JWT_REFRESH_SECRET=ci-only-insecure-smoke-refresh-secret \
+            -e OPENAI_API_KEY=ci-only-inert-placeholder \
+            estima-api:runtime-smoke
+          docker run -d --name estima-web-runtime-smoke -p 127.0.0.1:18080:80 estima-web:runtime-smoke
+          passed=0
+          for attempt in $(seq 1 40); do
+            if curl --fail --silent --show-error http://127.0.0.1:13000/docs-json -o /tmp/estima-runtime-openapi.json && \
+               node -e "const d=require('/tmp/estima-runtime-openapi.json'); if (!d.openapi || !d.paths) process.exit(1)" && \
+               curl --fail --silent http://127.0.0.1:18080/ | grep -qi '<html'; then
+              passed=1
+              break
+            fi
+            if [ "$(docker inspect -f '{{.State.Running}}' estima-api-runtime-smoke)" != "true" ]; then
+              docker logs estima-api-runtime-smoke
+              exit 1
+            fi
+            sleep 2
+          done
+          if [ "$passed" != 1 ]; then
+            docker logs estima-api-runtime-smoke
+            docker logs estima-web-runtime-smoke
+            exit 1
+          fi
+      - name: Remove runtime smoke containers
+        if: always()
+        run: docker rm -f estima-api-runtime-smoke estima-web-runtime-smoke || true
       - name: Remove disposable PostgreSQL
         if: always()
         run: docker rm -f "$MIGRATION_TEST_CONTAINER" || true
