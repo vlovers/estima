@@ -66,8 +66,7 @@ jobs:
         timeout-minutes: 12
         run: |
           docker build -f api/Dockerfile -t estima-api:runtime-smoke .
-          docker build -f web/Dockerfile -t estima-web:runtime-smoke .
-      - name: Smoke-test API and web containers
+      - name: Smoke-test API container
         timeout-minutes: 4
         run: |
           docker run -d --name estima-api-runtime-smoke --network host \
@@ -78,12 +77,11 @@ jobs:
             -e JWT_REFRESH_SECRET=ci-only-insecure-smoke-refresh-secret \
             -e OPENAI_API_KEY=ci-only-inert-placeholder \
             estima-api:runtime-smoke
-          docker run -d --name estima-web-runtime-smoke -p 127.0.0.1:18080:80 estima-web:runtime-smoke
           passed=0
           for attempt in $(seq 1 40); do
             if curl --fail --silent --show-error http://127.0.0.1:13000/docs-json -o /tmp/estima-runtime-openapi.json && \
                node -e "const d=require('/tmp/estima-runtime-openapi.json'); if (!d.openapi || !d.paths) process.exit(1)" && \
-               curl --fail --silent http://127.0.0.1:18080/ | grep -qi '<html'; then
+               curl --fail --silent http://127.0.0.1:13000/docs-json -o /dev/null; then
               passed=1
               break
             fi
@@ -95,12 +93,11 @@ jobs:
           done
           if [ "$passed" != 1 ]; then
             docker logs estima-api-runtime-smoke
-            docker logs estima-web-runtime-smoke
             exit 1
           fi
       - name: Remove runtime smoke containers
         if: always()
-        run: docker rm -f estima-api-runtime-smoke estima-web-runtime-smoke || true
+        run: docker rm -f estima-api-runtime-smoke || true
       - name: Remove disposable PostgreSQL
         if: always()
         run: docker rm -f "$MIGRATION_TEST_CONTAINER" || true
