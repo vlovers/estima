@@ -1,4 +1,5 @@
-FROM oven/bun:1.3.2-alpine AS build
+FROM node:24-bookworm-slim AS build
+COPY --from=oven/bun:1.3.2 /usr/local/bin/bun /usr/local/bin/bun
 WORKDIR /usr/src/app
 COPY package.json bun.lock ./
 RUN bun install --frozen-lockfile --ignore-scripts
