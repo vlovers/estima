@@ -89,6 +89,6 @@ export class AuthController {
       tokens.refreshToken,
       this.getRefreshCookieOptions()
     );
-    return tokens;
+    return { accessToken: tokens.accessToken };
   }
 }
