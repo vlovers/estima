@@ -44,17 +44,17 @@ jobs:
         run: bun install --frozen-lockfile --ignore-scripts
       - name: Verify native bcrypt
         run: bun -e "const bcrypt = require('bcrypt'); const hash = bcrypt.hashSync('test', 4); if (!bcrypt.compareSync('test', hash)) process.exit(1)"
-      - name: Initialize Nx native components
-        timeout-minutes: 3
+      - name: Diagnose Nx native loading
+        timeout-minutes: 2
         run: |
-          echo "Nx postinstall entrypoint:"
-          node -p "require('./node_modules/nx/package.json').scripts?.postinstall || 'none'"
-          node ./node_modules/nx/bin/post-install
-          echo "Nx native load:"
-          node -e "require('./node_modules/nx/src/native'); console.log('Nx native module loaded')"
-      - name: Verify Nx project graph
-        timeout-minutes: 3
-        run: timeout 145s node ./node_modules/nx/bin/nx.js show projects --verbose
+          echo "Inspect native Nx binary packages"
+          ls -la node_modules/nx/native || true
+          ls -la node_modules/@nx/nx-linux-x64-gnu || true
+          echo "Check Nx native import without postinstall"
+          timeout 35s node -e "require('./node_modules/nx/src/native'); console.log('Nx native loaded successfully')"
+      - name: Verify Nx project graph without postinstall
+        timeout-minutes: 2
+        run: timeout 95s node ./node_modules/nx/bin/nx.js show projects --verbose
       - name: Lint
         timeout-minutes: 5
         run: bun run lint
