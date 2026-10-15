@@ -3,7 +3,7 @@ import { ExtractJwt, Strategy } from 'passport-jwt';
 import { Request } from 'express';
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { getRequiredConfig, JWT_REFRESH_SECRET_KEY } from '../jwt-config';
+import { tokenSecret, validateTokenClaims } from '../token-security';
 
 @Injectable()
 export class RefreshTokenStrategy extends PassportStrategy(
@@ -14,20 +14,36 @@ export class RefreshTokenStrategy extends PassportStrategy(
     super({
       jwtFromRequest: ExtractJwt.fromExtractors([
         (req: Request) => {
-          const refreshToken = req.cookies['refreshToken'];
-          if (!refreshToken) {
+          const refreshToken = req.cookies?.['refreshToken'];
+          if (
+            typeof refreshToken !== 'string' ||
+            !refreshToken ||
+            refreshToken.length > 8192
+          ) {
             return null;
           }
           return refreshToken;
         },
       ]),
-      secretOrKey: getRequiredConfig(configService, JWT_REFRESH_SECRET_KEY),
+      algorithms: ['HS256'],
+      secretOrKey: tokenSecret(configService, 'refresh'),
       passReqToCallback: true,
     });
   }
 
-  validate(req: Request, payload: { sub: string; email: string }) {
-    const refreshToken = req.cookies['refreshToken'];
+  validate(
+    req: Request,
+    payload: {
+      sub: string;
+      email: string;
+      iat: number;
+      exp: number;
+      tokenUse: string;
+      jti: string;
+    }
+  ) {
+    validateTokenClaims(payload, 'refresh');
+    const refreshToken = req.cookies?.['refreshToken'];
     return {
       userId: payload.sub,
       email: payload.email,

@@ -1,14 +1,14 @@
 import { ForbiddenException, Injectable } from '@nestjs/common';
 import { UsersService } from '../users/users.service';
 import { JwtService } from '@nestjs/jwt';
-import * as bcrypt from 'bcrypt';
+import { randomUUID } from 'crypto';
+import {
+  matchesRefreshToken,
+  refreshTokenDigest,
+  tokenSecret,
+} from './token-security';
 import { CreateUserDto } from '../users/dto/create-user.dto';
 import { ConfigService } from '@nestjs/config';
-import {
-  getRequiredConfig,
-  JWT_ACCESS_SECRET_KEY,
-  JWT_REFRESH_SECRET_KEY,
-} from './jwt-config';
 
 @Injectable()
 export class AuthService {
@@ -50,32 +50,28 @@ export class AuthService {
     if (!user || !user.refreshToken) {
       throw new ForbiddenException('Access Denied');
     }
-    const refreshTokenMatches = await bcrypt.compare(
-      refreshToken,
-      user.refreshToken
-    );
-    if (!refreshTokenMatches) throw new ForbiddenException('Access Denied');
+    if (!matchesRefreshToken(refreshToken, user.refreshToken)) {
+      throw new ForbiddenException('Access Denied');
+    }
     const tokens = await this.getTokens(user.id, user.email);
-    await this.updateRefreshToken(user.id, tokens.refreshToken);
+    const rotated = await this.usersService.rotateRefreshToken(
+      user.id,
+      user.refreshToken,
+      refreshTokenDigest(tokens.refreshToken)
+    );
+    if (!rotated) throw new ForbiddenException('Access Denied');
     return tokens;
   }
 
   async updateRefreshToken(userId: string, refreshToken: string) {
-    const hashedRefreshToken = await bcrypt.hash(refreshToken, 10);
     await this.usersService.update(userId, {
-      refreshToken: hashedRefreshToken,
+      refreshToken: refreshTokenDigest(refreshToken),
     });
   }
 
   async getTokens(userId: string, email: string) {
-    const accessSecret = getRequiredConfig(
-      this.configService,
-      JWT_ACCESS_SECRET_KEY
-    );
-    const refreshSecret = getRequiredConfig(
-      this.configService,
-      JWT_REFRESH_SECRET_KEY
-    );
+    const accessSecret = tokenSecret(this.configService, 'access');
+    const refreshSecret = tokenSecret(this.configService, 'refresh');
     const accessExpiresIn =
       this.configService.get<string>('JWT_ACCESS_EXPIRES_IN') || '15m';
     const refreshExpiresIn =
@@ -83,16 +79,18 @@ export class AuthService {
 
     const [accessToken, refreshToken] = await Promise.all([
       this.jwtService.signAsync(
-        { sub: userId, email },
+        { sub: userId, email, tokenUse: 'access' },
         {
           secret: accessSecret,
+          algorithm: 'HS256',
           expiresIn: accessExpiresIn,
         }
       ),
       this.jwtService.signAsync(
-        { sub: userId, email },
+        { sub: userId, email, tokenUse: 'refresh', jti: randomUUID() },
         {
           secret: refreshSecret,
+          algorithm: 'HS256',
           expiresIn: refreshExpiresIn,
         }
       ),
