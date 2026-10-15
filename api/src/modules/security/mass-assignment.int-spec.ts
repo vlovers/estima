@@ -900,7 +900,7 @@ describe('Mass assignment security (disposable PostgreSQL)', () => {
       createHash('sha256')
         .update(cookie.split(';')[0].slice('refreshToken='.length))
         .digest('hex');
-    expect(storedHash).toMatch(/^v2:\\$2[aby]\\$/);
+    expect(storedHash.startsWith('v2:$2')).toBe(true);
     expect(await bcrypt.compare(hashToken(loginCookie), storedHash.slice(3))).toBe(false);
     expect(await bcrypt.compare(hashToken(rotatedCookie), storedHash.slice(3))).toBe(true);
 
