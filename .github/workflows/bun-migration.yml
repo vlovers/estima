@@ -17,6 +17,9 @@ jobs:
     env:
       NX_DAEMON: "false"
       NX_SKIP_NX_CACHE: "true"
+      NX_ISOLATE_PLUGINS: "false"
+      NX_TUI: "false"
+      CI: "true"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -41,6 +44,13 @@ jobs:
         run: bun install --frozen-lockfile --ignore-scripts
       - name: Verify native bcrypt
         run: bun -e "const bcrypt = require('bcrypt'); const hash = bcrypt.hashSync('test', 4); if (!bcrypt.compareSync('test', hash)) process.exit(1)"
+      - name: Diagnose Nx project graph
+        timeout-minutes: 3
+        run: |
+          node --version
+          bun --version
+          test -e node_modules/nx/bin/nx.js
+          node ./node_modules/nx/bin/nx.js show projects --verbose
       - name: Lint
         timeout-minutes: 5
         run: bun run lint
