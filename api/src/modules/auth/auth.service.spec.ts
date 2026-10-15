@@ -8,6 +8,7 @@ describe('AuthService JWT configuration', () => {
     update: jest.fn(),
     create: jest.fn(),
     clearRefreshToken: jest.fn(),
+    setRefreshToken: jest.fn(),
     findOne: jest.fn(),
     findOneByEmail: jest.fn(),
   } as unknown as UsersService;
