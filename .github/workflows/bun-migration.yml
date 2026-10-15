@@ -44,27 +44,15 @@ jobs:
         run: bun install --frozen-lockfile --ignore-scripts
       - name: Verify native bcrypt
         run: bun -e "const bcrypt = require('bcrypt'); const hash = bcrypt.hashSync('test', 4); if (!bcrypt.compareSync('test', hash)) process.exit(1)"
-      - name: Diagnose Nx plugins independently
-        timeout-minutes: 8
+      - name: Initialize Nx native components
+        timeout-minutes: 3
         run: |
-          cp nx.json nx.json.original
-          for plugin in none webpack react-router vite playwright; do
-            node - "$plugin" <<'NODE'
-          const fs = require('fs');
-          const plugin = process.argv[2];
-          const nx = JSON.parse(fs.readFileSync('nx.json.original', 'utf8'));
-          nx.plugins = plugin === 'none' ? [] : nx.plugins.filter(p => p.plugin.includes(plugin === 'react-router' ? '/router-plugin' : '/' + plugin + '/plugin'));
-          fs.writeFileSync('nx.json', JSON.stringify(nx, null, 2) + '\n');
-          NODE
-            echo "===== Nx plugin: $plugin ====="
-            if timeout 55s node ./node_modules/nx/bin/nx.js show projects --verbose; then
-              echo "PASS: $plugin"
-            else
-              echo "FAIL_OR_TIMEOUT: $plugin"
-            fi
-          done
-          mv nx.json.original nx.json
-      - name: Diagnose complete Nx graph
+          echo "Nx postinstall entrypoint:"
+          node -p "require('./node_modules/nx/package.json').scripts?.postinstall || 'none'"
+          node ./node_modules/nx/bin/post-install
+          echo "Nx native load:"
+          node -e "require('./node_modules/nx/src/native'); console.log('Nx native module loaded')"
+      - name: Verify Nx project graph
         timeout-minutes: 3
         run: timeout 145s node ./node_modules/nx/bin/nx.js show projects --verbose
       - name: Lint
