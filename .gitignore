@@ -48,3 +48,6 @@ vitest.config.*.timestamp*
 
 # Environment variables
 *.env
+# Browser verification artifacts
+/test-results/
+/playwright-report/
