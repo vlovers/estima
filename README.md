@@ -87,7 +87,8 @@ cd estima
 Install all the necessary dependencies for both the API and web applications from the root directory.
 
 ```bash
-bun ci
+bun ci --ignore-scripts
+node scripts/verify-native-dependencies.cjs
 ```
 
 ---
@@ -116,14 +117,14 @@ bun ci
     To set up the database schema, run the TypeORM migrations:
 
     ```bash
-    TYPEORM_MIGRATION_CHAIN=baseline bun run typeorm:run-migrations
+    POSTGRES_HOST=127.0.0.1 TYPEORM_MIGRATION_CHAIN=baseline bun --env-file=api/.env run typeorm:run-migrations
     ```
 
 4.  **Start the API Server:**
     From the root of the project, start the NestJS development server:
 
     ```bash
-    bun run start:api
+    POSTGRES_HOST=127.0.0.1 bun --env-file=api/.env run start:api
     ```
 
     The API will be running at `http://localhost:3000`.
@@ -149,7 +150,7 @@ Create `api/.env` from `api/.env.example` and set PostgreSQL credentials, JWT se
 
 ```bash
 docker compose up -d postgres
-TYPEORM_MIGRATION_CHAIN=baseline bun run typeorm:run-migrations
+POSTGRES_HOST=127.0.0.1 TYPEORM_MIGRATION_CHAIN=baseline bun --env-file=api/.env run typeorm:run-migrations
 docker compose up --build -d api web
 ```
 
@@ -167,7 +168,7 @@ To stop the stack: `docker compose down`. Do **not** use `docker compose down -v
 
 ## CI validation
 
-Pull requests to `develop` run Bun lockfile installation, lint, unit tests, API/Web builds and Docker image builds. A separate workflow runs baseline migration validation, HTTP/PostgreSQL integration tests and a production API runtime smoke test against a disposable PostgreSQL 17 container. These tests do not contact the real OpenAI API.
+Pushes and pull requests to `develop` and `main` run frozen Bun installation, native module verification, lint, unit tests and API/Web Docker builds on Linux x64 and ARM64. A separate workflow runs baseline migration validation, HTTP/PostgreSQL integration tests, runtime CORS preflights and production-image authentication against disposable PostgreSQL 17. These tests do not contact the real OpenAI API. See the [consolidation report](docs/integration/develop-consolidation.md) for provenance, verification and safe cleanup instructions.
 
 ## Validation and tests
 
