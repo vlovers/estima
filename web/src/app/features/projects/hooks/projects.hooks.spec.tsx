@@ -1,3 +1,4 @@
+import type { Mock } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { renderHook, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -43,7 +44,7 @@ describe('Project Hooks', () => {
       { id: '1', name: 'Project 1' },
       { id: '2', name: 'Project 2' },
     ];
-    (projectsApi.fetchProjects as vi.Mock).mockResolvedValue(mockProjects);
+    (projectsApi.fetchProjects as Mock).mockResolvedValue(mockProjects);
 
     const { result } = renderHook(() => useFetchProjects(), {
       wrapper: createWrapper(),
@@ -57,7 +58,7 @@ describe('Project Hooks', () => {
 
   it('useFetchProject should fetch a single project and return data', async () => {
     const mockProject = { id: '1', name: 'Project 1' };
-    (projectsApi.fetchProject as vi.Mock).mockResolvedValue(mockProject);
+    (projectsApi.fetchProject as Mock).mockResolvedValue(mockProject);
 
     const { result } = renderHook(() => useFetchProject('1'), {
       wrapper: createWrapper(),
@@ -65,14 +66,18 @@ describe('Project Hooks', () => {
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
-    expect(projectsApi.fetchProject).toHaveBeenCalledWith('1', undefined, undefined);
+    expect(projectsApi.fetchProject).toHaveBeenCalledWith(
+      '1',
+      undefined,
+      undefined
+    );
     expect(result.current.data).toEqual(mockProject);
   });
 
   it('useUpdateProjectMutation should call updateProject and return success', async () => {
     const mockProjectUpdate = { id: '1', name: 'Updated Project' };
     const mockOnSuccess = vi.fn();
-    (projectsApi.updateProject as vi.Mock).mockResolvedValue(mockProjectUpdate);
+    (projectsApi.updateProject as Mock).mockResolvedValue(mockProjectUpdate);
 
     const { result } = renderHook(
       () => useUpdateProjectMutation(mockOnSuccess),

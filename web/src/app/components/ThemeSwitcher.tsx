@@ -1,30 +1,27 @@
 import { IconSun, IconMoon } from '@tabler/icons-react';
-import classes from './ThemeSwitcher.module.css';
-import cx from 'clsx';
-
 import {
+  ActionIcon,
+  Tooltip,
   useComputedColorScheme,
   useMantineColorScheme,
-  ActionIcon,
 } from '@mantine/core';
 
 export function ThemeSwitcher() {
   const { setColorScheme } = useMantineColorScheme();
-  const computedColorScheme = useComputedColorScheme('light', {
-    getInitialValueInEffect: true,
-  });
-
+  const scheme = useComputedColorScheme('light');
+  const label =
+    scheme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme';
   return (
-    <ActionIcon
-      onClick={() =>
-        setColorScheme(computedColorScheme === 'light' ? 'dark' : 'light')
-      }
-      variant="default"
-      size="xl"
-      aria-label="Toggle color scheme"
-    >
-      <IconSun className={cx(classes.icon, classes.light)} stroke={1.5} />
-      <IconMoon className={cx(classes.icon, classes.dark)} stroke={1.5} />
-    </ActionIcon>
+    <Tooltip label={label}>
+      <ActionIcon
+        onClick={() => setColorScheme(scheme === 'light' ? 'dark' : 'light')}
+        variant="subtle"
+        color="gray"
+        size="lg"
+        aria-label={label}
+      >
+        {scheme === 'dark' ? <IconSun size={18} /> : <IconMoon size={18} />}
+      </ActionIcon>
+    </Tooltip>
   );
 }

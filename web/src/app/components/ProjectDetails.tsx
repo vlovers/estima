@@ -1,347 +1,361 @@
-import { ManualEstimateForm } from '../features/tasks/components/ManualEstimateForm';
-import { ClarificationModal } from '../features/tasks/components/ClarificationModal';
-import { CreateTaskForm } from '../features/tasks/components/CreateTaskForm';
-import { IconSearch, IconArrowDown, IconArrowUp } from '@tabler/icons-react';
-import { ProjectHeader } from '../features/projects/components/ProjectHeader';
-import { FeedbackForm } from '../features/tasks/components/FeedbackForm';
-import { useFetchProject } from '../features/projects/hooks/projects.hooks';
-import { EditTaskForm } from '../features/tasks/components/EditTaskForm';
-import { ProjectStats } from '../features/projects/components/ProjectStats';
-import { TaskList } from '../features/tasks/components/TaskList';
-import { useState, useMemo, useEffect } from 'react';
+import { useMemo, useState } from 'react';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useDisclosure } from '@mantine/hooks';
-import { useParams } from 'react-router-dom';
+import {
+  ActionIcon,
+  Button,
+  Drawer,
+  Group,
+  Modal,
+  MultiSelect,
+  Select,
+  Stack,
+  Text,
+  TextInput,
+} from '@mantine/core';
+import {
+  IconArrowDown,
+  IconArrowLeft,
+  IconArrowUp,
+  IconPlus,
+  IconSearch,
+} from '@tabler/icons-react';
 import { Task, Clarification } from '../types';
-
+import { useFetchProject } from '../features/projects/hooks/projects.hooks';
+import { ProjectHeader } from '../features/projects/components/ProjectHeader';
+import { ProjectStats } from '../features/projects/components/ProjectStats';
+import { CreateTaskForm } from '../features/tasks/components/CreateTaskForm';
+import { EditTaskForm } from '../features/tasks/components/EditTaskForm';
+import { TaskList } from '../features/tasks/components/TaskList';
+import { ManualEstimateForm } from '../features/tasks/components/ManualEstimateForm';
+import { FeedbackForm } from '../features/tasks/components/FeedbackForm';
+import { ClarificationModal } from '../features/tasks/components/ClarificationModal';
 import {
   useCreateManualEstimateMutation,
   useCreateFeedbackMutation,
   useDeleteTaskMutation,
   useClarifyTaskMutation,
 } from '../features/tasks/hooks/tasks.hooks';
+import { WorkspaceLoading, WorkspaceState } from './WorkspaceState';
 
-import {
-  ActionIcon,
-  TextInput,
-  Collapse,
-  Loader,
-  Divider,
-  Button,
-  Select,
-  Modal,
-  Group,
-  Stack,
-  Tabs,
-  Text,
-  Title,
-} from '@mantine/core';
-
-// Helper function to filter tasks based on search, and tags
-const filterTasks = (
+function flatten(tasks: Task[]): Task[] {
+  return tasks.flatMap((task) => [
+    task,
+    ...flatten(task.subtasks ?? task.children ?? []),
+  ]);
+}
+function filterTaskTree(
   tasks: Task[],
-  searchQuery: string,
-  tagsFilter: string[]
-): Task[] => {
-  const lowercasedQuery = searchQuery.toLowerCase();
-
-  const matches = (task: Task) => {
-    const searchMatch =
-      task.title.toLowerCase().includes(lowercasedQuery) ||
-      task.description.toLowerCase().includes(lowercasedQuery);
-    const tagsMatch =
-      tagsFilter.length === 0 ||
-      tagsFilter.every((tag) => task.tags.includes(tag));
-    return searchMatch && tagsMatch;
-  };
-
-  const recursiveFilter = (task: Task): Task | null => {
-    const subtasks = (task.subtasks || [])
-      .map(recursiveFilter)
-      .filter(Boolean) as Task[];
-
-    if (matches(task) || subtasks.length > 0) {
-      return { ...task, subtasks };
-    }
-
-    return null;
-  };
-
-  return tasks.map(recursiveFilter).filter(Boolean) as Task[];
-};
-
+  search: string,
+  tags: string[],
+  status: string
+): Task[] {
+  return tasks.flatMap((task) => {
+    const matches =
+      `${task.title} ${task.description ?? ''}`
+        .toLowerCase()
+        .includes(search.toLowerCase()) &&
+      tags.every((tag) => task.tags?.includes(tag)) &&
+      (status === 'all' || task.status === status);
+    const subtasks = filterTaskTree(
+      task.subtasks ?? task.children ?? [],
+      search,
+      tags,
+      status
+    );
+    return matches ? [task] : subtasks.length ? [{ ...task, subtasks }] : [];
+  });
+}
 export function ProjectDetails() {
   const { id } = useParams<{ id: string }>();
-
-  // State Management
-  const [activeTab, setActiveTab] = useState('tasks');
-  const [formOpened, { toggle: toggleForm }] = useDisclosure(false);
-  const [selectedTask, setSelectedTask] = useState<Task | null>(null);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [tagsFilter] = useState<string[]>([]);
+  const navigate = useNavigate();
+  const [formOpened, form] = useDisclosure(false);
+  const [editOpened, edit] = useDisclosure(false);
+  const [deleteOpened, remove] = useDisclosure(false);
+  const [feedbackOpened, feedback] = useDisclosure(false);
+  const [manualOpened, manual] = useDisclosure(false);
+  const [clarifyOpened, clarify] = useDisclosure(false);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [search, setSearch] = useState('');
+  const [tags, setTags] = useState<string[]>([]);
+  const [status, setStatus] = useState('all');
   const [sortField, setSortField] = useState('createdAt');
   const [sortOrder, setSortOrder] = useState('DESC');
-  const [expandedTasks, setExpandedTasks] = useState<Set<string>>(new Set());
-
-  // Modals State
-  const [editModalOpened, { open: openEditModal, close: closeEditModal }] =
-    useDisclosure(false);
-  const [
-    deleteModalOpened,
-    { open: openDeleteModal, close: closeDeleteModal },
-  ] = useDisclosure(false);
-  const [
-    feedbackModalOpened,
-    { open: openFeedbackModal, close: closeFeedbackModal },
-  ] = useDisclosure(false);
-  const [
-    manualEstimateModalOpened,
-    { open: openManualEstimateModal, close: closeManualEstimateModal },
-  ] = useDisclosure(false);
-  const [
-    clarifyModalOpened,
-    { open: openClarifyModal, close: closeClarifyModal },
-  ] = useDisclosure(false);
-
-  // Data Fetching
-  const {
-    data: project,
-    isLoading,
-    isError,
-    error,
-  } = useFetchProject(id!, sortField, sortOrder);
-
-  useEffect(() => {
-    if (project) {
-      console.log('Data received from backend:', project);
-    }
-  }, [project]);
-
-  // Mutations
-  const deleteMutation = useDeleteTaskMutation(project?.id || '');
-  const feedbackMutation = useCreateFeedbackMutation(project?.id || '');
-  const manualEstimateMutation = useCreateManualEstimateMutation(
-    project?.id || ''
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const query = useFetchProject(id, sortField, sortOrder);
+  const project = query.data;
+  const tasks = useMemo(() => flatten(project?.tasks ?? []), [project]);
+  const selected = tasks.find((task) => task.id === selectedId);
+  const filtered = useMemo(
+    () => filterTaskTree(project?.tasks ?? [], search, tags, status),
+    [project, search, tags, status]
   );
-  const clarifyMutation = useClarifyTaskMutation(closeClarifyModal);
-
-  // Derived State
-
-  const filteredTasks = useMemo(() => {
-    return filterTasks(project?.tasks || [], searchQuery, tagsFilter);
-  }, [project, searchQuery, tagsFilter]);
-
-  // Handlers
-  const handleEditClick = (task: Task) => {
-    setSelectedTask(task);
-    openEditModal();
+  const allTags = [...new Set(tasks.flatMap((task) => task.tags ?? []))];
+  const visibleExpanded =
+    search || tags.length || status !== 'all'
+      ? new Set(flatten(filtered).map((task) => task.id))
+      : expanded;
+  const deleteMutation = useDeleteTaskMutation(id);
+  const feedbackMutation = useCreateFeedbackMutation(id);
+  const manualMutation = useCreateManualEstimateMutation(id);
+  const clarifyMutation = useClarifyTaskMutation(clarify.close);
+  const select = (task: Task, open: () => void) => {
+    setSelectedId(task.id);
+    open();
   };
-
-  const handleDeleteClick = (task: Task) => {
-    setSelectedTask(task);
-    openDeleteModal();
-  };
-
-  const handleFeedbackClick = (task: Task) => {
-    setSelectedTask(task);
-    openFeedbackModal();
-  };
-
-  const handleManualEstimateClick = (task: Task) => {
-    setSelectedTask(task);
-    openManualEstimateModal();
-  };
-
-  const handleClarifyClick = (task: Task) => {
-    setSelectedTask(task);
-    openClarifyModal();
-  };
-
-  const handleToggleTask = (taskId: string) => {
-    setExpandedTasks((prev) => {
-      const newSet = new Set(prev);
-      if (newSet.has(taskId)) {
-        newSet.delete(taskId);
-      } else {
-        newSet.add(taskId);
-      }
-      return newSet;
+  const toggle = (taskId: string) =>
+    setExpanded((previous) => {
+      const next = new Set(previous);
+      if (next.has(taskId)) next.delete(taskId);
+      else next.add(taskId);
+      return next;
     });
+  const submitClarifications = (clarifications: Clarification[]) => {
+    if (selected) clarifyMutation.mutate({ id: selected.id, clarifications });
   };
-
-  const handleDeleteConfirm = () => {
-    if (selectedTask) {
-      deleteMutation.mutate(selectedTask.id, {
-        onSuccess: closeDeleteModal,
-      });
-    }
-  };
-
-  const handleClarifySubmit = (clarifications: Clarification[]) => {
-    if (selectedTask) {
-      clarifyMutation.mutate({ id: selectedTask.id, clarifications });
-    }
-  };
-
-  if (isLoading) return <Loader />;
-  if (isError) return <Text c="red">Error: {error.message}</Text>;
-  if (!project) return <Text>Project not found.</Text>;
-
+  if (query.isLoading) return <WorkspaceLoading label="Loading project" />;
+  if (query.isError)
+    return (
+      <WorkspaceState
+        error
+        title="Project could not be loaded"
+        description={query.error.message}
+        onRetry={() => {
+          void query.refetch();
+        }}
+      />
+    );
+  if (!project)
+    return (
+      <WorkspaceState
+        title="Project not found"
+        description="Return to your projects to find the work you're looking for."
+        action={
+          <Button component={Link} to="/">
+            All projects
+          </Button>
+        }
+      />
+    );
   return (
-    <Stack>
+    <>
+      <Link
+        className="text-link"
+        to="/"
+        style={{ marginBottom: 24, color: 'var(--ui-muted)' }}
+      >
+        <IconArrowLeft size={14} />
+        All projects
+      </Link>
       <ProjectHeader
         project={project}
-        onAddTaskClick={toggleForm}
-        onEditProjectClick={() => undefined}
+        onAddTaskClick={form.open}
+        onEditProjectClick={() => navigate(`/projects/${project.id}/edit`)}
       />
-
-      <Divider my="md" />
-
-      <Collapse in={formOpened}>
-        <CreateTaskForm projectId={project.id} onSuccess={toggleForm} />
-      </Collapse>
-
-      <Title order={3} mt="xl">
-        Project Stats
-      </Title>
       <ProjectStats project={project} />
-
-      <Tabs
-        value={activeTab}
-        onChange={(value) => setActiveTab(value || 'tasks')}
-      >
-        <Tabs.List>
-          <Tabs.Tab value="tasks">Tasks</Tabs.Tab>
-        </Tabs.List>
-
-        <Tabs.Panel value="tasks" pt="xs">
-          <Stack>
-            <Group justify="space-between" mb="md">
-              <TextInput
-                placeholder="Search tasks..."
-                value={searchQuery}
-                onChange={(event) => setSearchQuery(event.currentTarget.value)}
-                style={{ flex: 1 }}
-                leftSection={<IconSearch size={16} />}
-              />
-              <Group>
-                <Select
-                  value={sortField}
-                  onChange={(value) => setSortField(value || 'createdAt')}
-                  data={[
-                    { value: 'createdAt', label: 'Date' },
-                    { value: 'finalEstimate', label: 'AI Estimate' },
-                    { value: 'manualEstimate', label: 'Manual Estimate' },
-                  ]}
-                />
-                <ActionIcon
-                  variant="default"
-                  onClick={() =>
-                    setSortOrder(sortOrder === 'ASC' ? 'DESC' : 'ASC')
-                  }
-                  size="lg"
-                >
-                  {sortOrder === 'ASC' ? (
-                    <IconArrowUp size={16} />
-                  ) : (
-                    <IconArrowDown size={16} />
-                  )}
-                </ActionIcon>
-              </Group>
-            </Group>
-            <TaskList
-              tasks={filteredTasks}
-              onEdit={handleEditClick}
-              onDelete={handleDeleteClick}
-              onFeedback={handleFeedbackClick}
-              onManualEstimate={handleManualEstimateClick}
-              onClarify={handleClarifyClick}
-              expandedTasks={expandedTasks}
-              onToggleTask={handleToggleTask}
-            />
-          </Stack>
-        </Tabs.Panel>
-      </Tabs>
-
-      {/* Modals */}
-      <Modal
-        opened={deleteModalOpened}
-        onClose={closeDeleteModal}
-        title="Confirm Deletion"
-        size="sm"
-      >
-        <Text size="sm">
-          Are you sure you want to delete this task? This action cannot be
-          undone.
+      <Group justify="space-between" mb="lg">
+        <h2 className="section-title">
+          Tasks{' '}
+          <Text span size="xs" c="dimmed" ml={6}>
+            {project.tasks?.length ?? 0}
+          </Text>
+        </h2>
+        <Text size="xs" c="dimmed">
+          Scope, estimate, refine.
         </Text>
-        <Group justify="flex-end" mt="xl">
-          <Button variant="default" onClick={closeDeleteModal}>
-            Cancel
-          </Button>
-          <Button
-            color="red"
-            onClick={handleDeleteConfirm}
-            loading={deleteMutation.isPending}
-          >
-            Delete Task
-          </Button>
-        </Group>
-      </Modal>
-
-      <Modal
-        opened={editModalOpened}
-        onClose={closeEditModal}
-        title="Edit Task"
-        size="lg"
+      </Group>
+      {!!project.tasks?.length && (
+        <>
+          <div className="toolbar">
+            <TextInput
+              className="toolbar-search"
+              aria-label="Search tasks"
+              placeholder="Search tasks…"
+              leftSection={<IconSearch size={16} />}
+              value={search}
+              onChange={(event) => setSearch(event.currentTarget.value)}
+            />
+            <div className="toolbar-controls">
+              <Select
+                aria-label="Filter task status"
+                w={160}
+                data={[
+                  { value: 'all', label: 'All statuses' },
+                  { value: 'estimated', label: 'Estimated' },
+                  { value: 'pending_clarification', label: 'Needs input' },
+                ]}
+                value={status}
+                onChange={(value) => setStatus(value || 'all')}
+              />
+              <Select
+                aria-label="Sort tasks by"
+                w={150}
+                data={[
+                  { value: 'createdAt', label: 'Created date' },
+                  { value: 'finalEstimate', label: 'AI estimate' },
+                  { value: 'manualEstimate', label: 'Manual estimate' },
+                ]}
+                value={sortField}
+                onChange={(value) => setSortField(value || 'createdAt')}
+              />
+              <ActionIcon
+                variant="default"
+                size="lg"
+                aria-label={
+                  sortOrder === 'ASC' ? 'Sort descending' : 'Sort ascending'
+                }
+                onClick={() =>
+                  setSortOrder(sortOrder === 'ASC' ? 'DESC' : 'ASC')
+                }
+              >
+                {sortOrder === 'ASC' ? (
+                  <IconArrowUp size={16} />
+                ) : (
+                  <IconArrowDown size={16} />
+                )}
+              </ActionIcon>
+            </div>
+          </div>
+          {allTags.length > 0 && (
+            <MultiSelect
+              aria-label="Filter tasks by tags"
+              placeholder="Filter by tags"
+              data={allTags}
+              value={tags}
+              onChange={setTags}
+              clearable
+              mb="lg"
+              maw={340}
+            />
+          )}
+        </>
+      )}
+      {project.tasks?.length ? (
+        <TaskList
+          tasks={filtered}
+          onEdit={(task) => select(task, edit.open)}
+          onDelete={(task) => select(task, remove.open)}
+          onFeedback={(task) => select(task, feedback.open)}
+          onManualEstimate={(task) => select(task, manual.open)}
+          onClarify={(task) => select(task, clarify.open)}
+          expandedTasks={visibleExpanded}
+          onToggleTask={toggle}
+        />
+      ) : (
+        <WorkspaceState
+          title="Make the first task concrete"
+          description="Describe a piece of work to explore its estimate, or add your own manual reference."
+          action={
+            <Button leftSection={<IconPlus size={16} />} onClick={form.open}>
+              Add your first task
+            </Button>
+          }
+        />
+      )}
+      <Drawer
+        opened={formOpened}
+        onClose={form.close}
+        position="right"
+        size={680}
+        title="New task"
+        closeOnClickOutside={false}
       >
-        {selectedTask && (
+        <CreateTaskForm
+          projectId={project.id}
+          onSuccess={form.close}
+          onCancel={form.close}
+        />
+      </Drawer>
+      <Modal
+        opened={editOpened}
+        onClose={edit.close}
+        size={680}
+        title="Edit task"
+        closeOnClickOutside={false}
+      >
+        {selected && (
           <EditTaskForm
-            task={selectedTask}
+            task={selected}
             projectId={project.id}
-            onSuccess={closeEditModal}
+            onSuccess={edit.close}
+            onCancel={edit.close}
           />
         )}
       </Modal>
-
-      <ClarificationModal
-        opened={clarifyModalOpened}
-        onClose={closeClarifyModal}
-        task={selectedTask}
-        onSubmit={handleClarifySubmit}
-      />
-
       <Modal
-        opened={feedbackModalOpened}
-        onClose={closeFeedbackModal}
-        title="Add Feedback"
+        opened={deleteOpened}
+        onClose={() => {
+          if (!deleteMutation.isPending) remove.close();
+        }}
+        title="Delete task?"
+        size="sm"
       >
-        {selectedTask && (
+        <Stack>
+          <Text size="sm">
+            “{selected?.title}” will be permanently removed. This cannot be
+            undone.
+          </Text>
+          <Group justify="flex-end">
+            <Button
+              variant="default"
+              data-autofocus
+              onClick={remove.close}
+              disabled={deleteMutation.isPending}
+            >
+              Keep task
+            </Button>
+            <Button
+              color="red"
+              loading={deleteMutation.isPending}
+              onClick={() => {
+                if (selected)
+                  deleteMutation.mutate(selected.id, {
+                    onSuccess: remove.close,
+                  });
+              }}
+            >
+              Delete task
+            </Button>
+          </Group>
+        </Stack>
+      </Modal>
+      <Modal
+        opened={feedbackOpened}
+        onClose={feedback.close}
+        title="Estimation feedback"
+      >
+        {selected && (
           <FeedbackForm
-            taskId={selectedTask.id}
-            onSubmit={(data) =>
-              feedbackMutation.mutate(data, { onSuccess: closeFeedbackModal })
+            taskId={selected.id}
+            onSubmit={(values) =>
+              feedbackMutation.mutate(values, { onSuccess: feedback.close })
             }
             isLoading={feedbackMutation.isPending}
           />
         )}
       </Modal>
-
       <Modal
-        opened={manualEstimateModalOpened}
-        onClose={closeManualEstimateModal}
-        title="Set Manual Estimate"
+        opened={manualOpened}
+        onClose={manual.close}
+        title="Set a manual estimate"
       >
-        {selectedTask && (
+        {selected && (
           <ManualEstimateForm
-            taskId={selectedTask.id}
-            onSubmit={(data) =>
-              manualEstimateMutation.mutate(data, {
-                onSuccess: closeManualEstimateModal,
-              })
+            taskId={selected.id}
+            onSubmit={(values) =>
+              manualMutation.mutate(values, { onSuccess: manual.close })
             }
-            isLoading={manualEstimateMutation.isPending}
+            isLoading={manualMutation.isPending}
           />
         )}
       </Modal>
-    </Stack>
+      <ClarificationModal
+        opened={clarifyOpened}
+        onClose={clarify.close}
+        task={selected ?? null}
+        onSubmit={submitClarifications}
+        isLoading={clarifyMutation.isPending}
+      />
+    </>
   );
 }

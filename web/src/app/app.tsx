@@ -1,129 +1,128 @@
-import { ProjectsList } from './features/projects/components/ProjectsList';
-import { useLogoutMutation } from './features/auth/hooks/auth.hooks';
+import { lazy, ReactNode, Suspense } from 'react';
+import { Route, Routes, Link } from 'react-router-dom';
+import { Button } from '@mantine/core';
 import { ProtectedRoute } from './components/ProtectedRoute';
-import { ThemeSwitcher } from './components/ThemeSwitcher';
-import { CreateProjectPage } from './pages/CreateProjectPage';
-import { Route, Routes, Outlet, Link } from 'react-router-dom';
-import { IconHome, IconLayoutDashboard, IconLogout } from '@tabler/icons-react';
-import { ProjectDetails } from './components/ProjectDetails';
-import { EditProjectPage } from './pages/EditProjectPage';
-import { Notifications } from '@mantine/notifications';
-import { RegisterPage } from './pages/RegisterPage';
-import { useDisclosure } from '@mantine/hooks';
-import { LoginPage } from './pages/LoginPage';
-import { DashboardPage } from './pages/DashboardPage';
+import { WorkspaceLayout } from './components/WorkspaceLayout';
+import { WorkspaceLoading, WorkspaceState } from './components/WorkspaceState';
 
-import {
-  ActionIcon,
-  AppShell,
-  Tooltip,
-  Divider,
-  Burger,
-  Group,
-  Stack,
-  Title,
-} from '@mantine/core';
-
-export function App() {
-  const [opened, { toggle }] = useDisclosure();
-  const { mutate: logout } = useLogoutMutation();
-
-  const handleLogout = () => {
-    logout();
-  };
-
+const ProjectsList = lazy(() =>
+  import('./features/projects/components/ProjectsList').then((module) => ({
+    default: module.ProjectsList,
+  }))
+);
+const ProjectDetails = lazy(() =>
+  import('./components/ProjectDetails').then((module) => ({
+    default: module.ProjectDetails,
+  }))
+);
+const CreateProjectPage = lazy(() =>
+  import('./pages/CreateProjectPage').then((module) => ({
+    default: module.CreateProjectPage,
+  }))
+);
+const EditProjectPage = lazy(() =>
+  import('./pages/EditProjectPage').then((module) => ({
+    default: module.EditProjectPage,
+  }))
+);
+const RegisterPage = lazy(() =>
+  import('./pages/RegisterPage').then((module) => ({
+    default: module.RegisterPage,
+  }))
+);
+const LoginPage = lazy(() =>
+  import('./pages/LoginPage').then((module) => ({ default: module.LoginPage }))
+);
+const DashboardPage = lazy(() =>
+  import('./pages/DashboardPage').then((module) => ({
+    default: module.DashboardPage,
+  }))
+);
+function Page({ children }: { children: ReactNode }) {
   return (
-    <>
-      <Notifications />
-      <Routes>
-        <Route path="/login" element={<LoginPage />} />
-        <Route path="/register" element={<RegisterPage />} />
-        <Route element={<ProtectedRoute />}>
-          <Route
-            element={
-              <AppShell
-                header={{ height: 60 }}
-                navbar={{
-                  width: 64,
-                  breakpoint: 'sm',
-                  collapsed: { mobile: !opened },
-                }}
-                padding="md"
-              >
-                <AppShell.Header>
-                  <Group h="100%" px="md" justify="space-between">
-                    <Group>
-                      <Burger
-                        opened={opened}
-                        onClick={toggle}
-                        hiddenFrom="sm"
-                        size="sm"
-                      />
-                      <Title order={3}>AI Estimates</Title>
-                    </Group>
-                    <ThemeSwitcher />
-                  </Group>
-                </AppShell.Header>
-
-                <AppShell.Navbar p="sm">
-                  <Stack justify="space-between" h="100%" align="center">
-                    <Stack align="center">
-                      <Tooltip label="Projects" position="right" withArrow>
-                        <ActionIcon
-                          component={Link}
-                          to="/"
-                          size="lg"
-                          variant="subtle"
-                          aria-label="Projects"
-                        >
-                          <IconHome size="1.2rem" stroke={1.6} />
-                        </ActionIcon>
-                      </Tooltip>
-                      <Tooltip label="Dashboard" position="right" withArrow>
-                        <ActionIcon
-                          component={Link}
-                          to="/dashboard"
-                          size="lg"
-                          variant="subtle"
-                          aria-label="Dashboard"
-                        >
-                          <IconLayoutDashboard size="1.2rem" stroke={1.6} />
-                        </ActionIcon>
-                      </Tooltip>
-                    </Stack>
-
-                    <Stack align="center" w="100%">
-                      <Divider w="100%" />
-                      <Tooltip label="Logout" position="right" withArrow>
-                        <ActionIcon
-                          onClick={handleLogout}
-                          size="lg"
-                          variant="subtle"
-                          aria-label="Logout"
-                        >
-                          <IconLogout size="1.2rem" stroke={1.6} />
-                        </ActionIcon>
-                      </Tooltip>
-                    </Stack>
-                  </Stack>
-                </AppShell.Navbar>
-
-                <AppShell.Main>
-                  <Outlet />
-                </AppShell.Main>
-              </AppShell>
-            }
-          >
-            <Route path="/" element={<ProjectsList />} />
-            <Route path="/dashboard" element={<DashboardPage />} />
-            <Route path="/projects/new" element={<CreateProjectPage />} />
-            <Route path="/projects/:id" element={<ProjectDetails />} />
-            <Route path="/projects/:id/edit" element={<EditProjectPage />} />
-          </Route>
-        </Route>
-      </Routes>
-    </>
+    <Suspense fallback={<WorkspaceLoading label="Loading page" />}>
+      {children}
+    </Suspense>
   );
 }
-
+export function App() {
+  return (
+    <Routes>
+      <Route
+        path="/login"
+        element={
+          <Page>
+            <LoginPage />
+          </Page>
+        }
+      />
+      <Route
+        path="/register"
+        element={
+          <Page>
+            <RegisterPage />
+          </Page>
+        }
+      />
+      <Route element={<ProtectedRoute />}>
+        <Route element={<WorkspaceLayout />}>
+          <Route
+            path="/"
+            element={
+              <Page>
+                <ProjectsList />
+              </Page>
+            }
+          />
+          <Route
+            path="/dashboard"
+            element={
+              <Page>
+                <DashboardPage />
+              </Page>
+            }
+          />
+          <Route
+            path="/projects/new"
+            element={
+              <Page>
+                <CreateProjectPage />
+              </Page>
+            }
+          />
+          <Route
+            path="/projects/:id"
+            element={
+              <Page>
+                <ProjectDetails />
+              </Page>
+            }
+          />
+          <Route
+            path="/projects/:id/edit"
+            element={
+              <Page>
+                <EditProjectPage />
+              </Page>
+            }
+          />
+          <Route
+            path="*"
+            element={
+              <WorkspaceState
+                title="Page not found"
+                description="This page may have moved. Your projects are still in your workspace."
+                action={
+                  <Button component={Link} to="/">
+                    Back to projects
+                  </Button>
+                }
+              />
+            }
+          />
+        </Route>
+      </Route>
+    </Routes>
+  );
+}
 export default App;

@@ -3,7 +3,8 @@ import { ProjectForm } from '../features/projects/components/ProjectForm';
 import { useNavigate, useParams } from 'react-router-dom';
 import { notifications } from '@mantine/notifications';
 import { api } from '../services/authApiService';
-import { Loader, Alert } from '@mantine/core';
+import { PageHeader } from '../components/PageHeader';
+import { WorkspaceLoading, WorkspaceState } from '../components/WorkspaceState';
 
 interface Project {
   id: string;
@@ -80,19 +81,32 @@ export function EditProjectPage() {
     }
   };
 
-  if (isLoading) return <Loader />;
-  if (isError) return <Alert color="red">{error.message}</Alert>;
+  if (isLoading) return <WorkspaceLoading label="Loading project settings" />;
+  if (isError)
+    return (
+      <WorkspaceState
+        error
+        title="Project could not be loaded"
+        description={error.message}
+      />
+    );
 
   return (
-    <ProjectForm
-      onSubmit={handleSubmit}
-      isLoading={mutation.isPending}
-      initialValues={{
-        name: project?.name || '',
-        description: project?.description || '',
-        complexity: project?.complexity || 'MEDIUM',
-        overhead: project?.overhead || 0,
-      }}
-    />
+    <div className="form-page">
+      <PageHeader
+        title="Project settings"
+        description="Keep your scope and estimation context up to date."
+      />
+      <ProjectForm
+        onSubmit={handleSubmit}
+        isLoading={mutation.isPending}
+        initialValues={{
+          name: project?.name || '',
+          description: project?.description || '',
+          complexity: project?.complexity || 'MEDIUM',
+          overhead: project?.overhead || 0,
+        }}
+      />
+    </div>
   );
 }

@@ -8,6 +8,7 @@ interface ClarificationModalProps {
   onClose: () => void;
   task: Task | null;
   onSubmit: (clarifications: Clarification[]) => void;
+  isLoading?: boolean;
 }
 
 export function ClarificationModal({
@@ -15,6 +16,7 @@ export function ClarificationModal({
   onClose,
   task,
   onSubmit,
+  isLoading = false,
 }: ClarificationModalProps) {
   const form = useForm({
     initialValues: {
@@ -35,7 +37,6 @@ export function ClarificationModal({
 
   const handleSubmit = (values: { clarifications: Clarification[] }) => {
     onSubmit(values.clarifications);
-    onClose();
   };
 
   return (
@@ -48,15 +49,16 @@ export function ClarificationModal({
           </Text>
           {form.values.clarifications.map((field, index) => (
             <Stack key={index}>
-              <Text fw={500}>{field.question}</Text>
               <Textarea
-                placeholder="Your answer..."
+                label={field.question}
+                required={!field.answer}
+                placeholder="Your answer…"
                 {...form.getInputProps(`clarifications.${index}.answer`)}
-                disabled={!!field.answer} // Disable if already answered
+                disabled={!!field.answer || isLoading} // Disable if already answered
               />
             </Stack>
           ))}
-          <Button type="submit" mt="md">
+          <Button type="submit" mt="md" loading={isLoading}>
             Submit Answers
           </Button>
         </Stack>

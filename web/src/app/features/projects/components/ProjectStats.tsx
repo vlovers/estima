@@ -1,53 +1,40 @@
-import { Grid, Card, Text, Group } from '@mantine/core';
 import { Project } from '../../../types';
+import { formatHours, projectEffort } from '../../../utils/estimation';
 
-import { IconListNumbers, IconClock } from '@tabler/icons-react';
-
-interface ProjectStatsProps {
-  project: Project;
-}
-
-export function ProjectStats({ project }: ProjectStatsProps) {
-  const totalTasks = project.tasks.length;
-  const totalHours = project.tasks
-    .flatMap((t) => t.estimates)
-    .reduce(
-      (acc, est) => acc + (est.manualEstimate ?? est.finalEstimate ?? 0),
-      0
-    );
-
+export function ProjectStats({ project }: { project: Project }) {
+  const tasks = project.tasks ?? [];
+  const effort = projectEffort(tasks);
+  const needsInput = tasks.filter(
+    (task) => task.status === 'pending_clarification'
+  ).length;
   return (
-    <Grid>
-      <Grid.Col span={{ base: 12, md: 6, lg: 3 }}>
-        <Card withBorder radius="md" p="sm">
-          <Group>
-            <IconListNumbers size={28} />
-            <div>
-              <Text c="dimmed" size="xs">
-                Total Tasks
-              </Text>
-              <Text fw={700} size="xl">
-                {totalTasks}
-              </Text>
-            </div>
-          </Group>
-        </Card>
-      </Grid.Col>
-      <Grid.Col span={{ base: 12, md: 6, lg: 3 }}>
-        <Card withBorder radius="md" p="sm">
-          <Group>
-            <IconClock size={28} />
-            <div>
-              <Text c="dimmed" size="xs">
-                Total Estimated Hours
-              </Text>
-              <Text fw={700} size="xl">
-                {totalHours.toFixed(1)}
-              </Text>
-            </div>
-          </Group>
-        </Card>
-      </Grid.Col>
-    </Grid>
+    <div className="summary-grid">
+      <div className="surface summary-card">
+        <div className="summary-label">Top-level tasks</div>
+        <div className="summary-value">{tasks.length}</div>
+        <div className="summary-footnote">
+          Breakdowns stay inside their parent task
+        </div>
+      </div>
+      <div className="surface summary-card">
+        <div className="summary-label">Estimated effort</div>
+        <div className="summary-value">
+          {formatHours(effort.hours)}
+          {effort.hours !== undefined && (
+            <span style={{ fontSize: 14, marginLeft: 6 }}>hours</span>
+          )}
+        </div>
+        <div className="summary-footnote">
+          {effort.estimatedTasks
+            ? `${effort.estimatedTasks} of ${tasks.length} tasks have estimates`
+            : 'No estimates available yet'}
+        </div>
+      </div>
+      <div className="surface summary-card">
+        <div className="summary-label">Needs your input</div>
+        <div className="summary-value">{needsInput}</div>
+        <div className="summary-footnote">Tasks awaiting clarification</div>
+      </div>
+    </div>
   );
 }
