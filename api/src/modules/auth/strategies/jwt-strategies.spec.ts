@@ -13,13 +13,19 @@ describe('JWT strategies', () => {
     }),
   } as unknown as ConfigService;
 
+  const userId = '11111111-1111-4111-8111-111111111111';
+  const times = () => ({
+    iat: Math.floor(Date.now() / 1000),
+    exp: Math.floor(Date.now() / 1000) + 60,
+  });
+
   it('standardizes access-token req.user shape', () => {
     const strategy = new AccessTokenStrategy(configService);
 
     expect(
-      strategy.validate({ sub: 'user-id', email: 'user@example.com' })
+      strategy.validate({ sub: userId, email: 'user@example.com', ...times() })
     ).toEqual({
-      userId: 'user-id',
+      userId,
       email: 'user@example.com',
     });
   });
@@ -28,12 +34,15 @@ describe('JWT strategies', () => {
     const strategy = new RefreshTokenStrategy(configService);
 
     expect(
-      strategy.validate(
-        { cookies: { refreshToken: 'refresh-token' } } as any,
-        { sub: 'user-id', email: 'user@example.com' }
-      )
+      strategy.validate({ cookies: { refreshToken: 'refresh-token' } } as any, {
+        sub: userId,
+        email: 'user@example.com',
+        ...times(),
+        tokenUse: 'refresh',
+        jti: '22222222-2222-4222-8222-222222222222',
+      })
     ).toEqual({
-      userId: 'user-id',
+      userId,
       email: 'user@example.com',
       refreshToken: 'refresh-token',
     });
@@ -56,6 +65,17 @@ describe('JWT strategies', () => {
 
     expect(() => new RefreshTokenStrategy(missingConfig)).toThrow(
       'JWT_REFRESH_SECRET must be configured'
+    );
+  });
+  it('rejects identical access and refresh signing secrets at startup', () => {
+    const sameConfig = {
+      get: jest.fn(() => 'same-test-only-secret'),
+    } as unknown as ConfigService;
+    expect(() => new AccessTokenStrategy(sameConfig)).toThrow(
+      'JWT access and refresh secrets must be different'
+    );
+    expect(() => new RefreshTokenStrategy(sameConfig)).toThrow(
+      'JWT access and refresh secrets must be different'
     );
   });
 });

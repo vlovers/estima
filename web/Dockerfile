@@ -4,6 +4,7 @@ WORKDIR /usr/src/app
 COPY package.json bun.lock ./
 RUN bun install --frozen-lockfile --ignore-scripts
 COPY . .
+RUN node scripts/verify-native-dependencies.cjs
 RUN bun run build:web
 
 FROM nginx:stable-alpine

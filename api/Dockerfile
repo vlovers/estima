@@ -9,7 +9,8 @@ COPY --from=deps /usr/local/bin/bun /usr/local/bin/bun
 WORKDIR /usr/src/app
 COPY --from=deps /usr/src/app/node_modules ./node_modules
 COPY . .
-RUN bun run build:api
+RUN node scripts/verify-native-dependencies.cjs
+RUN NX_DAEMON=false NX_ISOLATE_PLUGINS=false bun run build:api
 
 FROM oven/bun:1.3.2 AS production
 ENV NODE_ENV=production

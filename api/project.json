@@ -40,6 +40,12 @@
           "buildTarget": "api:build:production"
         }
       }
+    },
+    "lint": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "node ./node_modules/eslint/bin/eslint.js --config api/eslint.auth.config.cjs \"api/src/modules/auth/**/*.ts\" \"api/src/modules/users/**/*.ts\" --max-warnings=0"
+      }
     }
   },
   "tags": []
