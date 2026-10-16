@@ -16,6 +16,9 @@ services:
     environment:
       POSTGRES_HOST: postgres
       POSTGRES_PORT: "5432"
+      # Local Nginx and separate development server. Override via the shell or
+      # Compose's project .env; production must supply its exact HTTPS origins.
+      CORS_ORIGINS: "${CORS_ORIGINS-http://localhost,http://localhost:4200}"
     networks:
       - app-network
 

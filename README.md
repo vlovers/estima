@@ -155,6 +155,10 @@ docker compose up --build -d api web
 
 Web is available at `http://localhost` and the API at `http://localhost:3000`. Swagger JSON is at `http://localhost:3000/docs-json`.
 
+Local Compose permits credentialed API requests from `http://localhost` (Docker/Nginx) and `http://localhost:4200` (the separate development server). To replace this allowlist, set `CORS_ORIGINS` in the shell or project-root `.env`, for example `CORS_ORIGINS=https://estima.example`. Compose's explicit setting takes precedence over `api/.env`. Use comma-separated exact HTTP(S) origins without paths, trailing slashes or wildcards; an empty value fails startup. Production must supply its frontend's exact HTTPS origin(s). Direct API development defaults to `http://localhost:4200` when the variable is absent. Credentialed requests and the existing HttpOnly, SameSite and production Secure cookie settings are unchanged.
+
+After a CORS configuration change, rebuild/recreate the API with `docker compose up -d --build --no-deps api`; `docker compose restart` alone does not apply environment changes. No database restart or migration is needed.
+
 To stop the stack: `docker compose down`. Do **not** use `docker compose down -v` unless you intentionally want to destroy the database volume.
 
 **Existing databases:** Do not run baseline migrations automatically. Inspect and reconcile the database first; see [migration safety notes](api/src/database/MIGRATIONS.md). The API intentionally fails closed on unknown or legacy migration histories.
