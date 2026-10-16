@@ -1,24 +1,40 @@
 const assert = require('node:assert/strict');
 const { execFileSync } = require('node:child_process');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
 
 async function verify() {
   if (process.argv[2] === '--compose') {
-    for (const [configured, expected] of [
-      [undefined, 'http://localhost,http://localhost:4200'],
-      ['https://estima.example', 'https://estima.example'],
-      ['', ''],
-    ]) {
-      const env = { ...process.env };
-      delete env.CORS_ORIGINS;
-      if (configured !== undefined) env.CORS_ORIGINS = configured;
-      const config = JSON.parse(
-        execFileSync(
-          'docker',
-          ['compose', 'config', '--no-env-resolution', '--format', 'json'],
-          { env, encoding: 'utf8' }
-        )
+    // Older Compose versions still require env_file paths to exist when
+    // --no-env-resolution is set. Use an isolated fixture, never local secrets.
+    const fixture = fs.mkdtempSync(path.join(os.tmpdir(), 'estima-cors-'));
+    try {
+      fs.copyFileSync(
+        path.join(__dirname, '../docker-compose.yml'),
+        path.join(fixture, 'docker-compose.yml')
       );
-      assert.equal(config.services.api.environment.CORS_ORIGINS, expected);
+      fs.mkdirSync(path.join(fixture, 'api'));
+      fs.writeFileSync(path.join(fixture, 'api/.env'), '');
+      for (const [configured, expected] of [
+        [undefined, 'http://localhost,http://localhost:4200'],
+        ['https://estima.example', 'https://estima.example'],
+        ['', ''],
+      ]) {
+        const env = { ...process.env };
+        delete env.CORS_ORIGINS;
+        if (configured !== undefined) env.CORS_ORIGINS = configured;
+        const config = JSON.parse(
+          execFileSync(
+            'docker',
+            ['compose', 'config', '--no-env-resolution', '--format', 'json'],
+            { env, cwd: fixture, encoding: 'utf8' }
+          )
+        );
+        assert.equal(config.services.api.environment.CORS_ORIGINS, expected);
+      }
+    } finally {
+      fs.rmSync(fixture, { recursive: true, force: true });
     }
     console.log(
       'PASS: Compose CORS defaults, explicit replacement and empty override'
