@@ -1,3 +1,4 @@
+import type { Mock } from 'vitest';
 import { fetchProjects, fetchProject, updateProject } from './projects.api';
 import { api } from '../../../services/authApiService';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -15,7 +16,7 @@ describe('Projects API', () => {
   beforeEach(() => vi.clearAllMocks());
   it('should call api.get without params when fetchProjects is called', async () => {
     const mockResponse = { data: [] };
-    (api.get as vi.Mock).mockResolvedValue(mockResponse);
+    (api.get as Mock).mockResolvedValue(mockResponse);
 
     await fetchProjects();
 
@@ -25,7 +26,7 @@ describe('Projects API', () => {
   it('should call api.get with correct id when fetchProject is called', async () => {
     const projectId = 'proj-1';
     const mockResponse = { data: { id: projectId, name: 'Test Project' } };
-    (api.get as vi.Mock).mockResolvedValue(mockResponse);
+    (api.get as Mock).mockResolvedValue(mockResponse);
 
     await fetchProject(projectId);
 
@@ -40,7 +41,7 @@ describe('Projects API', () => {
       name: 'Updated Name',
     };
     const mockResponse = { data: { ...projectData, id: projectId } };
-    (api.patch as vi.Mock).mockResolvedValue(mockResponse);
+    (api.patch as Mock).mockResolvedValue(mockResponse);
 
     await updateProject({ id: projectId, ...projectData });
 

@@ -1,3 +1,4 @@
+import type { Mock } from 'vitest';
 import { createTask, updateTask, deleteTask } from './tasks.api';
 import { CreateTaskDto, UpdateTaskDto } from '../../../types';
 import { api } from '../../../services/authApiService';
@@ -21,9 +22,11 @@ describe('Tasks API', () => {
       technology: 'React',
       experienceLevel: 'JUNIOR',
       tags: ['test'],
+      useAiEstimate: true,
+      breakdown: false,
     };
     const mockResponse = { data: { ...taskData, id: 'task-1' } };
-    (api.post as vi.Mock).mockResolvedValue(mockResponse);
+    (api.post as Mock).mockResolvedValue(mockResponse);
 
     await createTask(taskData);
 
@@ -36,7 +39,7 @@ describe('Tasks API', () => {
       title: 'Updated Title',
     };
     const mockResponse = { data: { ...taskData, id: taskId } };
-    (api.patch as vi.Mock).mockResolvedValue(mockResponse);
+    (api.patch as Mock).mockResolvedValue(mockResponse);
 
     await updateTask({ id: taskId, ...taskData });
 
@@ -45,7 +48,7 @@ describe('Tasks API', () => {
 
   it('should call api.delete with correct id when deleteTask is called', async () => {
     const taskId = 'task-1';
-    (api.delete as vi.Mock).mockResolvedValue({});
+    (api.delete as Mock).mockResolvedValue({});
 
     await deleteTask(taskId);
 

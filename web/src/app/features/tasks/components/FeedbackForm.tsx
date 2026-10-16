@@ -9,9 +9,15 @@ import {
   MultiSelect,
   Title,
   Divider,
+  Text,
 } from '@mantine/core';
-import { CreateFeedbackDto, DeviationReason, ComplexityTag } from '../../../types';
+import {
+  CreateFeedbackDto,
+  DeviationReason,
+  ComplexityTag,
+} from '../../../types';
 import { useForm } from '@mantine/form';
+import { useId } from 'react';
 
 interface FeedbackFormProps {
   taskId: string;
@@ -19,14 +25,24 @@ interface FeedbackFormProps {
   isLoading: boolean;
 }
 
-const deviationReasonOptions = Object.entries(DeviationReason).map(([label, value]) => ({
-  label: label.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
-  value,
-}));
+const deviationReasonOptions = Object.entries(DeviationReason).map(
+  ([label, value]) => ({
+    label: label
+      .toLowerCase()
+      .replace(/_/g, ' ')
+      .replace(/\b\w/g, (l) => l.toUpperCase()),
+    value,
+  })
+);
 
 const complexityTagOptions = Object.values(ComplexityTag);
 
-export function FeedbackForm({ taskId, onSubmit, isLoading }: FeedbackFormProps) {
+export function FeedbackForm({
+  taskId,
+  onSubmit,
+  isLoading,
+}: FeedbackFormProps) {
+  const ratingId = useId();
   const form = useForm<Omit<CreateFeedbackDto, 'taskId'>>({
     initialValues: {
       actualHours: 0,
@@ -37,10 +53,13 @@ export function FeedbackForm({ taskId, onSubmit, isLoading }: FeedbackFormProps)
       missedComplexityTags: [],
     },
     validate: {
-      actualHours: (value) => (value <= 0 ? 'Actual hours must be positive' : null),
+      actualHours: (value) =>
+        value <= 0 ? 'Actual hours must be positive' : null,
       rating: (value) => (value === 0 ? 'Please provide a rating' : null),
       reasonForDeviation: (value, values) =>
-        values.actualHours > 0 && !value ? 'Please select a reason for the deviation' : null,
+        values.actualHours > 0 && !value
+          ? 'Please select a reason for the deviation'
+          : null,
     },
   });
 
@@ -63,8 +82,19 @@ export function FeedbackForm({ taskId, onSubmit, isLoading }: FeedbackFormProps)
         />
 
         <Stack gap={2}>
-            <Title order={5}>Accuracy Rating</Title>
-            <Rating {...form.getInputProps('rating')} />
+          <Title order={5} id={ratingId}>
+            Accuracy rating
+          </Title>
+          <Rating
+            aria-labelledby={ratingId}
+            getSymbolLabel={(value) => `${value} out of 5`}
+            {...form.getInputProps('rating')}
+          />
+          {form.errors.rating && (
+            <Text size="xs" c="red" role="alert">
+              {form.errors.rating}
+            </Text>
+          )}
         </Stack>
 
         <Textarea

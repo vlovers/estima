@@ -1,223 +1,297 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { IconSearch, IconPencil, IconTrash } from '@tabler/icons-react';
-import { Link, useNavigate } from 'react-router-dom';
-import { notifications } from '@mantine/notifications';
-import { api } from '../../../services/authApiService';
-import { useState, useEffect } from 'react';
-import { Project } from '../../../types';
-
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import {
-  SimpleGrid,
+  IconArrowUpRight,
+  IconDots,
+  IconPencil,
+  IconPlus,
+  IconSearch,
+  IconTrash,
+} from '@tabler/icons-react';
+import { Link } from 'react-router-dom';
+import { notifications } from '@mantine/notifications';
+import {
   ActionIcon,
-  TextInput,
-  Loader,
-  Button,
   Badge,
+  Button,
   Group,
+  Menu,
   Modal,
+  Select,
   Stack,
   Text,
-  Alert,
-  Card,
-  Title,
+  TextInput,
 } from '@mantine/core';
+import { useState } from 'react';
+import { api } from '../../../services/authApiService';
+import { Project } from '../../../types';
+import { useFetchProjects } from '../hooks/projects.hooks';
+import { PageHeader } from '../../../components/PageHeader';
+import {
+  WorkspaceLoading,
+  WorkspaceState,
+} from '../../../components/WorkspaceState';
 
-// API functions
-const fetchProjects = async (): Promise<Project[]> => {
-  const { data } = await api.get('/projects');
-  return data;
-};
+import { complexityColors, complexityLabels } from '../projectPresentation';
 
-const deleteProject = async (id: string): Promise<void> => {
-  await api.delete(`/projects/${id}`);
-};
-
-const complexityColors: Record<Project['complexity'], string> = {
-  LOW: 'green',
-  MEDIUM: 'yellow',
-  HIGH: 'red',
-};
-
-export function ProjectsList() {
+export function ProjectsList({ overview = false }: { overview?: boolean }) {
   const queryClient = useQueryClient();
-  const navigate = useNavigate();
-  const [deleteModalOpened, setDeleteModalOpened] = useState(false);
-  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(
-    null
-  );
-  const [searchQuery, setSearchQuery] = useState('');
-
-  const {
-    data: projects,
-    error,
-    isLoading,
-    isSuccess,
-  } = useQuery<Project[], Error>({
-    queryKey: ['projects'],
-    queryFn: fetchProjects,
-  });
-
-  useEffect(() => {
-    if (isSuccess && projects && projects.length === 0) {
-      navigate('/projects/new');
-    }
-  }, [isSuccess, projects, navigate]);
-
-  const deleteMutation = useMutation<void, Error, string>({
-    mutationFn: deleteProject,
+  const [selected, setSelected] = useState<Project | null>(null);
+  const [search, setSearch] = useState('');
+  const [complexity, setComplexity] = useState('all');
+  const query = useFetchProjects();
+  const projects = query.data ?? [];
+  const remove = useMutation({
+    mutationFn: async (id: string) => {
+      await api.delete(`/projects/${id}`);
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['projects'] });
-      setDeleteModalOpened(false);
+      setSelected(null);
       notifications.show({
-        title: 'Project Deleted',
-        message: 'The project has been successfully deleted.',
-        color: 'green',
+        title: 'Project deleted',
+        message: 'The project has been removed.',
+        color: 'brand',
       });
     },
-    onError: (error) => {
+    onError: (error: Error) =>
       notifications.show({
-        title: 'Deletion Failed',
+        title: 'Could not delete project',
         message: error.message,
         color: 'red',
-      });
-    },
+      }),
   });
-
-  const openDeleteModal = (id: string) => {
-    setSelectedProjectId(id);
-    setDeleteModalOpened(true);
-  };
-
-  const handleDelete = () => {
-    if (selectedProjectId) {
-      deleteMutation.mutate(selectedProjectId);
-    }
-  };
-
-  const filteredProjects = projects?.filter((project) =>
-    project.name.toLowerCase().includes(searchQuery.toLowerCase())
+  const filtered = projects.filter(
+    (project) =>
+      `${project.name} ${project.description}`
+        .toLowerCase()
+        .includes(search.toLowerCase()) &&
+      (complexity === 'all' || project.complexity === complexity)
   );
-
-  if (isLoading) {
-    return <Loader />;
-  }
-
-  if (error) {
-    return (
-      <Alert title="Error" color="red">
-        Failed to load projects: {error.message}
-      </Alert>
-    );
-  }
-
+  const create = (
+    <Button
+      component={Link}
+      to="/projects/new"
+      leftSection={<IconPlus size={16} />}
+    >
+      New project
+    </Button>
+  );
   return (
-    <div>
-      <Group justify="space-between" mb="xl">
-        <Title order={2}>Projects</Title>
-        <Button component={Link} to="/projects/new">
-          Create Project
-        </Button>
-      </Group>
-
-      <TextInput
-        placeholder="Search projects..."
-        mb="xl"
-        value={searchQuery}
-        onChange={(event) => setSearchQuery(event.currentTarget.value)}
-        rightSection={<IconSearch size={14} />}
+    <>
+      <PageHeader
+        title={overview ? 'Workspace overview' : 'Projects'}
+        description={
+          overview
+            ? 'A clear starting point for the work ahead.'
+            : 'Bring scope, tasks and estimates together in one place.'
+        }
+        action={create}
       />
-
-      <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }} spacing="lg">
-        {filteredProjects?.map((project) => (
-          <Card
-            shadow="sm"
-            p="lg"
-            radius="md"
-            withBorder
-            key={project.id}
-            component={Link}
-            to={`/projects/${project.id}`}
-            style={{ textDecoration: 'none' }}
-          >
-            <Stack justify="space-between" h="100%">
-              <div>
-                <Group justify="space-between" mb="xs">
-                  <Title order={4}>{project.name}</Title>
-                  <Badge color={complexityColors[project.complexity]}>
-                    {project.complexity}
-                  </Badge>
-                </Group>
-
-                <Text size="sm" c="dimmed" lineClamp={3}>
-                  {project.description}
-                </Text>
+      {query.isLoading ? (
+        <WorkspaceLoading label="Loading projects" />
+      ) : query.isError ? (
+        <WorkspaceState
+          error
+          title="Projects could not be loaded"
+          description={query.error.message}
+          onRetry={() => {
+            void query.refetch();
+          }}
+        />
+      ) : (
+        <>
+          {overview && projects.length > 0 && (
+            <div className="summary-grid">
+              {[
+                ['Projects', projects.length, 'In your workspace'],
+                [
+                  'High complexity',
+                  projects.filter((project) => project.complexity === 'HIGH')
+                    .length,
+                  'Projects with more moving parts',
+                ],
+                [
+                  'Low complexity',
+                  projects.filter((project) => project.complexity === 'LOW')
+                    .length,
+                  'Projects with a focused scope',
+                ],
+              ].map(([label, value, note]) => (
+                <div className="surface summary-card" key={label}>
+                  <div className="summary-label">{label}</div>
+                  <div className="summary-value">{value}</div>
+                  <div className="summary-footnote">{note}</div>
+                </div>
+              ))}
+            </div>
+          )}
+          {projects.length > 0 ? (
+            <>
+              <div className="toolbar">
+                <TextInput
+                  className="toolbar-search"
+                  aria-label="Search projects"
+                  placeholder="Search projects…"
+                  leftSection={<IconSearch size={16} />}
+                  value={search}
+                  onChange={(event) => setSearch(event.currentTarget.value)}
+                />
+                <div className="toolbar-controls">
+                  <Text size="xs" c="dimmed">
+                    {filtered.length}{' '}
+                    {filtered.length === 1 ? 'project' : 'projects'}
+                  </Text>
+                  <Select
+                    aria-label="Filter project complexity"
+                    value={complexity}
+                    onChange={(value) => setComplexity(value || 'all')}
+                    w={178}
+                    data={[
+                      { value: 'all', label: 'All complexity' },
+                      ...Object.entries(complexityLabels).map(
+                        ([value, label]) => ({ value, label })
+                      ),
+                    ]}
+                  />
+                </div>
               </div>
-
-              <div>
-                <Group mt="md" grow>
-                  <Stack gap={0} align="center">
-                    <Text size="lg" fw={700}>
-                      {project.tasks?.length || 0}
-                    </Text>
-                    <Text size="xs" c="dimmed">
-                      Tasks
-                    </Text>
-                  </Stack>
-                  <Stack gap={0} align="center">
-                    <Text size="lg" fw={700}>
-                      {project.overhead}%
-                    </Text>
-                    <Text size="xs" c="dimmed">
-                      Overhead
-                    </Text>
-                  </Stack>
-                </Group>
-
-                <Group justify="flex-end" mt="md">
-                  <ActionIcon
-                    variant="light"
-                    component={Link}
-                    to={`/projects/${project.id}/edit`}
-                    onClick={(e) => e.preventDefault()}
-                  >
-                    <IconPencil size={16} />
-                  </ActionIcon>
-                  <ActionIcon
-                    variant="light"
-                    color="red"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      openDeleteModal(project.id);
-                    }}
-                  >
-                    <IconTrash size={16} />
-                  </ActionIcon>
-                </Group>
-              </div>
-            </Stack>
-          </Card>
-        ))}
-      </SimpleGrid>
-
+              {filtered.length ? (
+                <div className="project-grid">
+                  {filtered.map((project) => (
+                    <article className="surface project-card" key={project.id}>
+                      <div className="project-card-top">
+                        <div className="project-monogram" aria-hidden="true">
+                          {project.name
+                            .split(/\s+/)
+                            .slice(0, 2)
+                            .map((word) => word[0])
+                            .join('')
+                            .toUpperCase()}
+                        </div>
+                        <Menu position="bottom-end" width={190}>
+                          <Menu.Target>
+                            <ActionIcon
+                              variant="subtle"
+                              color="gray"
+                              aria-label={`Actions for ${project.name}`}
+                            >
+                              <IconDots size={18} />
+                            </ActionIcon>
+                          </Menu.Target>
+                          <Menu.Dropdown>
+                            <Menu.Item
+                              component={Link}
+                              to={`/projects/${project.id}/edit`}
+                              leftSection={<IconPencil size={15} />}
+                            >
+                              Edit project
+                            </Menu.Item>
+                            <Menu.Item
+                              color="red"
+                              leftSection={<IconTrash size={15} />}
+                              onClick={() => setSelected(project)}
+                            >
+                              Delete project
+                            </Menu.Item>
+                          </Menu.Dropdown>
+                        </Menu>
+                      </div>
+                      <Group gap="xs" mb="sm">
+                        <Badge
+                          size="xs"
+                          variant="light"
+                          color={complexityColors[project.complexity]}
+                        >
+                          {complexityLabels[project.complexity]}
+                        </Badge>
+                      </Group>
+                      <h2 style={{ margin: 0, fontSize: '16px' }}>
+                        <Link
+                          className="project-title"
+                          to={`/projects/${project.id}`}
+                        >
+                          {project.name}
+                        </Link>
+                      </h2>
+                      <Text className="project-description" lineClamp={3}>
+                        {project.description || 'No description provided.'}
+                      </Text>
+                      <div className="project-card-footer">
+                        <Text size="xs" c="dimmed">
+                          {project.overhead}% overhead
+                        </Text>
+                        <Link
+                          className="text-link"
+                          to={`/projects/${project.id}`}
+                        >
+                          Open project
+                          <IconArrowUpRight size={14} />
+                        </Link>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              ) : (
+                <WorkspaceState
+                  title="No matching projects"
+                  description="Try another search or remove the complexity filter."
+                  action={
+                    <Button
+                      variant="default"
+                      onClick={() => {
+                        setSearch('');
+                        setComplexity('all');
+                      }}
+                    >
+                      Clear filters
+                    </Button>
+                  }
+                />
+              )}
+            </>
+          ) : (
+            <WorkspaceState
+              title="Start with your first project"
+              description="Give your work a home. Add a project, define its scope, then turn tasks into estimates."
+              action={create}
+            />
+          )}
+        </>
+      )}
       <Modal
-        opened={deleteModalOpened}
-        onClose={() => setDeleteModalOpened(false)}
-        title="Confirm Deletion"
+        opened={!!selected}
+        onClose={() => {
+          if (!remove.isPending) setSelected(null);
+        }}
+        title="Delete project?"
+        size="sm"
       >
-        <Text>Are you sure you want to delete this project?</Text>
-        <Group justify="flex-end" mt="md">
-          <Button variant="default" onClick={() => setDeleteModalOpened(false)}>
-            Cancel
-          </Button>
-          <Button
-            color="red"
-            onClick={handleDelete}
-            loading={deleteMutation.isPending}
-          >
-            Delete
-          </Button>
-        </Group>
+        <Stack>
+          <Text size="sm">
+            “{selected?.name}” and its tasks will be permanently removed. This
+            cannot be undone.
+          </Text>
+          <Group justify="flex-end">
+            <Button
+              variant="default"
+              data-autofocus
+              onClick={() => setSelected(null)}
+              disabled={remove.isPending}
+            >
+              Keep project
+            </Button>
+            <Button
+              color="red"
+              loading={remove.isPending}
+              onClick={() => {
+                if (selected) remove.mutate(selected.id);
+              }}
+            >
+              Delete project
+            </Button>
+          </Group>
+        </Stack>
       </Modal>
-    </div>
+    </>
   );
 }

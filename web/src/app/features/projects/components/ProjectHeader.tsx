@@ -1,43 +1,51 @@
-import { IconSettings } from '@tabler/icons-react';
+import { Badge, Button, Group } from '@mantine/core';
+import { IconPlus, IconSettings } from '@tabler/icons-react';
 import { Project } from '../../../types';
-
-import {
-  ActionIcon,
-  Button,
-  Badge,
-  Group,
-  Stack,
-  Text,
-  Title,
-} from '@mantine/core';
+import { PageHeader } from '../../../components/PageHeader';
+import { complexityColors, complexityLabels } from '../projectPresentation';
 
 interface ProjectHeaderProps {
   project: Project;
   onAddTaskClick: () => void;
   onEditProjectClick: () => void;
 }
-
 export function ProjectHeader({
   project,
   onAddTaskClick,
   onEditProjectClick,
 }: ProjectHeaderProps) {
   return (
-    <Group justify="space-between">
-      <Stack gap="xs">
-        <Group>
-          <Title order={2}>{project.name}</Title>
-          <ActionIcon variant="subtle" onClick={onEditProjectClick}>
-            <IconSettings size={20} />
-          </ActionIcon>
-        </Group>
-        <Text c="dimmed">{project.description}</Text>
-        <Group gap="sm">
-          <Badge variant="outline">Complexity: {project.complexity}</Badge>
-          <Badge variant="outline">Overhead: {project.overhead}%</Badge>
-        </Group>
-      </Stack>
-      <Button onClick={onAddTaskClick}>Add Task</Button>
-    </Group>
+    <>
+      <PageHeader
+        eyebrow="Project workspace"
+        title={project.name}
+        description={project.description}
+        action={
+          <Group gap="sm">
+            <Button
+              variant="default"
+              leftSection={<IconSettings size={16} />}
+              onClick={onEditProjectClick}
+            >
+              Settings
+            </Button>
+            <Button
+              leftSection={<IconPlus size={16} />}
+              onClick={onAddTaskClick}
+            >
+              Add task
+            </Button>
+          </Group>
+        }
+      />
+      <Group gap="sm" mb="xl">
+        <Badge variant="light" color={complexityColors[project.complexity]}>
+          {complexityLabels[project.complexity]}
+        </Badge>
+        <Badge variant="outline" color="gray">
+          {project.overhead}% project overhead
+        </Badge>
+      </Group>
+    </>
   );
 }

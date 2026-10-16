@@ -4,6 +4,7 @@ import { notifications } from '@mantine/notifications';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../services/authApiService';
 import { Project } from '../types';
+import { PageHeader } from '../components/PageHeader';
 
 interface CreateProjectDto {
   name: string;
@@ -47,5 +48,13 @@ export function CreateProjectPage() {
     mutation.mutate(values);
   };
 
-  return <ProjectForm onSubmit={handleSubmit} isLoading={mutation.isPending} />;
+  return (
+    <div className="form-page">
+      <PageHeader
+        title="New project"
+        description="Start with a clear scope. You can add tasks and estimates next."
+      />
+      <ProjectForm onSubmit={handleSubmit} isLoading={mutation.isPending} />
+    </div>
+  );
 }

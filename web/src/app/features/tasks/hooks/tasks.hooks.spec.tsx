@@ -1,3 +1,4 @@
+import type { Mock } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { renderHook, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -41,11 +42,20 @@ describe('Task Hooks', () => {
   });
 
   it('useCreateTaskMutation should call createTask and return success', async () => {
-    const newTask: CreateTaskDto = { title: 'New Test Task', projectId: '1' };
+    const newTask: CreateTaskDto = {
+      title: 'New Test Task',
+      projectId: '1',
+      description: 'A complete task scope.',
+      technology: 'React',
+      experienceLevel: 'MIDDLE',
+      tags: [],
+      useAiEstimate: true,
+      breakdown: false,
+    };
     const mockSuccessResponse = {
       id: 'task-123',
       ...newTask,
-      status: 'TO_DO',
+      status: 'estimated',
       tags: [],
       estimates: [],
       children: [],
@@ -53,7 +63,7 @@ describe('Task Hooks', () => {
     const mockOnSuccess = vi.fn();
 
     // Setup the mock API function
-    (taskApi.createTask as vi.Mock).mockResolvedValue(mockSuccessResponse);
+    (taskApi.createTask as Mock).mockResolvedValue(mockSuccessResponse);
 
     // Render the hook with the wrapper
     const { result } = renderHook(() => useCreateTaskMutation(mockOnSuccess), {
@@ -72,12 +82,12 @@ describe('Task Hooks', () => {
   });
 
   it('useUpdateTaskMutation should call updateTask and return success', async () => {
-    const taskUpdate: UpdateTaskDto = {
+    const taskUpdate: UpdateTaskDto & { id: string } = {
       id: 'task-1',
       title: 'Updated Task',
     };
     const mockOnSuccess = vi.fn();
-    (taskApi.updateTask as vi.Mock).mockResolvedValue(taskUpdate);
+    (taskApi.updateTask as Mock).mockResolvedValue(taskUpdate);
 
     const { result } = renderHook(
       () => useUpdateTaskMutation('project-1', mockOnSuccess),
@@ -98,7 +108,7 @@ describe('Task Hooks', () => {
   it('useDeleteTaskMutation should call deleteTask and return success', async () => {
     const taskId = 'task-to-delete';
     const mockOnSuccess = vi.fn();
-    (taskApi.deleteTask as vi.Mock).mockResolvedValue(undefined);
+    (taskApi.deleteTask as Mock).mockResolvedValue(undefined);
 
     const { result } = renderHook(
       () => useDeleteTaskMutation('project-1', mockOnSuccess),

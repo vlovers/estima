@@ -24,6 +24,13 @@ export default defineConfig(() => ({
     outDir: '../dist/web',
     emptyOutDir: true,
     reportCompressedSize: true,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'react-vendor': ['react', 'react-dom', 'react-router-dom'],
+        },
+      },
+    },
     commonjsOptions: {
       transformMixedEsModules: true,
     },

@@ -1,6 +1,6 @@
 import { Collapse, Stack } from '@mantine/core';
 import { TaskCard } from './TaskCard';
-import { Text } from '@mantine/core';
+import { WorkspaceState } from '../../../components/WorkspaceState';
 import { Task } from '../../../types';
 
 interface TaskListProps {
@@ -25,7 +25,12 @@ export function TaskList({
   onToggleTask,
 }: TaskListProps) {
   if (!tasks || tasks.length === 0) {
-    return <Text c="dimmed">No tasks found for the current filters.</Text>;
+    return (
+      <WorkspaceState
+        title="No matching tasks"
+        description="Try a different search or clear the filters to see more of the project."
+      />
+    );
   }
 
   return (
@@ -46,7 +51,7 @@ export function TaskList({
             />
             {task.subtasks && task.subtasks.length > 0 && (
               <Collapse in={isExpanded}>
-                <div style={{ marginLeft: '2rem', marginTop: '1rem' }}>
+                <div className="subtask-list">
                   <TaskList
                     tasks={task.subtasks}
                     onEdit={onEdit}
