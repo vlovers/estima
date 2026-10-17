@@ -1,4 +1,5 @@
-import type { DataSource } from 'typeorm';
+/** Minimal adapter: works with pg Pool/Client, TypeORM DataSource and compatible clients. */
+export type BoundaryDatabase = { query(sql: string): Promise<Record<string, unknown>[]> };
 
 /**
  * Experimental snapshot-based failure boundary probe.
@@ -22,6 +23,8 @@ const identifier = (value: string) => {
   return '"' + value.replace(/"/g, '""') + '"';
 };
 const stable = (value: unknown): string => {
+  if (value instanceof Date) return JSON.stringify(value.toISOString());
+  if (typeof Buffer !== 'undefined' && Buffer.isBuffer(value)) return JSON.stringify(value.toString('base64'));
   if (Array.isArray(value)) return '[' + value.map(stable).join(',') + ']';
   if (value && typeof value === 'object') {
     return '{' + Object.entries(value).sort(([a], [b]) => a.localeCompare(b))
@@ -31,11 +34,12 @@ const stable = (value: unknown): string => {
 };
 
 export async function takeBoundarySnapshot(
-  db: DataSource,
+  db: BoundaryDatabase,
   tables: readonly TableSpec[],
   maxRowsPerTable = 5000
 ): Promise<Snapshot> {
   if (!tables.length) throw new Error('MutationBoundary: select at least one table');
+  if (!Number.isSafeInteger(maxRowsPerTable) || maxRowsPerTable < 1) throw new Error('MutationBoundary: invalid snapshot limit');
   const snapshot: Snapshot = new Map();
   for (const table of tables) {
     const name = identifier(table.name);
@@ -76,7 +80,7 @@ export function diffBoundarySnapshots(before: Snapshot, after: Snapshot): RowCha
 }
 
 export async function observeFailureBoundary(
-  db: DataSource,
+  db: BoundaryDatabase,
   tables: readonly TableSpec[],
   action: () => Promise<void>
 ): Promise<RowChange[]> {
