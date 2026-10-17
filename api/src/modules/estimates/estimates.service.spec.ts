@@ -101,6 +101,38 @@ describe('EstimatesService tenant isolation', () => {
     );
   });
 
+  it('initializes manual estimate hours without leaving the default zero final value', async () => {
+    const { service } = buildService(true);
+    estimateRepository.findOne.mockResolvedValue(null);
+    await service.createOrUpdateManualEstimate('task-a', 8, 'user-a');
+    expect(estimateRepository.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        source: EstimateSource.MANUAL,
+        manualEstimate: 8,
+        finalEstimate: 8,
+      })
+    );
+  });
+
+  it.each([EstimateSource.MANUAL, EstimateSource.AI, EstimateSource.FINAL])(
+    'updates manual hours on %s without changing an AI/final result',
+    async (source) => {
+      const { service } = buildService(true);
+      const estimate = {
+        id: 'estimate-a',
+        source,
+        finalEstimate: 8,
+      } as Estimate;
+      estimateRepository.findOne.mockResolvedValue(estimate);
+      estimateRepository.save = jest.fn().mockResolvedValue(estimate);
+      await service.createOrUpdateManualEstimate('task-a', 14, 'user-a');
+      expect(estimate.manualEstimate).toBe(14);
+      expect(estimate.finalEstimate).toBe(
+        source === EstimateSource.MANUAL ? 14 : 8
+      );
+    }
+  );
+
   it('returns 404 when detail query cannot find an owned estimate', async () => {
     const { service } = buildService(true);
     (estimateRepository.createQueryBuilder as jest.Mock).mockReturnValue(

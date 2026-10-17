@@ -182,12 +182,16 @@ export class EstimatesService {
 
     if (existingEstimate) {
       existingEstimate.manualEstimate = hours;
+      if (existingEstimate.source === EstimateSource.MANUAL) {
+        existingEstimate.finalEstimate = hours;
+      }
       return this.estimateRepository.save(existingEstimate);
     }
 
     const newEstimate = this.estimateRepository.create({
       task: { id: taskId },
       manualEstimate: hours,
+      finalEstimate: hours,
       source: EstimateSource.MANUAL,
     });
     const inserted = await this.estimateRepository.insert(newEstimate);

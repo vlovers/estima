@@ -43,6 +43,41 @@ export class TasksService {
       userId
     );
 
+    // An explicit opt-out must not depend on provider credentials or quota.
+    // Omitted flags retain the existing behavior for older API clients.
+    if (createTaskDto.useAiEstimate === false) {
+      const task = this.taskRepository.create({
+        title: createTaskDto.title,
+        description: createTaskDto.description,
+        technology: createTaskDto.technology,
+        experienceLevel: createTaskDto.experienceLevel,
+        tags: createTaskDto.tags,
+        breakdown: createTaskDto.breakdown ?? true,
+        acceptanceCriteria: createTaskDto.acceptanceCriteria ?? [],
+        assumptions: createTaskDto.assumptions ?? [],
+        constraints: createTaskDto.constraints ?? [],
+        nfrs: createTaskDto.nfrs ?? [],
+        integrations: createTaskDto.integrations ?? [],
+        testing: createTaskDto.testing ?? null,
+        documentation: createTaskDto.documentation ?? null,
+        complexityTags: createTaskDto.complexityTags ?? [],
+        uiDesignComplexity: createTaskDto.uiDesignComplexity ?? null,
+        needsDataMigration: createTaskDto.needsDataMigration ?? false,
+        migrationComplexity: createTaskDto.migrationComplexity ?? null,
+        project: { id: project.id },
+        status: TaskStatus.ESTIMATED,
+      });
+      await this.insertTask(task);
+      if (createTaskDto.manualEstimate !== undefined) {
+        await this.estimatesService.createOrUpdateManualEstimate(
+          task.id,
+          createTaskDto.manualEstimate,
+          userId
+        );
+      }
+      return this.findOne(task.id, userId);
+    }
+
     const analysis = await this.aiEstimatorService.createInitialAnalysis(
       createTaskDto,
       project
