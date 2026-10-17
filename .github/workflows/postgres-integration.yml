@@ -50,7 +50,7 @@ jobs:
             # Bun's Git package contains only publishable files, not source.
             # Build from the pinned repository revision instead.
             git clone --quiet https://github.com/vlovers/mutation-boundary.git /tmp/mutation-boundary-source
-            git -C /tmp/mutation-boundary-source checkout --quiet cd501854cf90d97cdac28e63dbfa4e5241e27b10
+            git -C /tmp/mutation-boundary-source checkout --quiet 9e0045ba31c15d6d06077d248cb5aae626a93944
             (cd /tmp/mutation-boundary-source && bun install --ignore-scripts && bun run build)
             mkdir -p node_modules/mutation-boundary/dist
             cp -R /tmp/mutation-boundary-source/dist/. node_modules/mutation-boundary/dist/
