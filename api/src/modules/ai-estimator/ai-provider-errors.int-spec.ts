@@ -1,4 +1,5 @@
 import { INestApplication } from '@nestjs/common';
+import { assertNoMutation, MutationBoundaryError } from 'mutation-boundary';
 import { Test } from '@nestjs/testing';
 import { DataSource } from 'typeorm';
 import { randomUUID } from 'crypto';
@@ -30,6 +31,11 @@ import {
 describe('AI provider failures (real SDK, Nest HTTP and disposable PostgreSQL)', () => {
   let app: INestApplication;
   let db: DataSource;
+  let mutationBoundarySafety: {
+    expectedDatabase: string;
+    expectedUser: string;
+    confirmDisposableTestDatabase: true;
+  };
   let provider: Server;
   let mode = 'success';
   let calls = 0;
@@ -145,6 +151,11 @@ describe('AI provider failures (real SDK, Nest HTTP and disposable PostgreSQL)',
     );
     assertDisposablePostgresConfig(config);
     assertDisposableDockerIsolation(config);
+    mutationBoundarySafety = {
+      expectedDatabase: config.targetDatabase,
+      expectedUser: config.username,
+      confirmDisposableTestDatabase: true,
+    };
     const admin = createAdminDataSource(config);
     await initializeWithRetry(admin);
     try {
@@ -394,6 +405,37 @@ describe('AI provider failures (real SDK, Nest HTTP and disposable PostgreSQL)',
       expect(remoteIdleTransactions).toEqual([0, 0, 0]);
     }
   );
+
+  it('MutationBoundary package: detects partial clarification writes after failed final estimate', async () => {
+    const created = await post({ ...task(false), breakdown: true }).expect(201);
+    const id = created.body.id as string;
+    const question = 'What are the accessibility requirements?';
+    await db.query(
+      'UPDATE tasks SET status = $1, "clarificationHistory" = $2::jsonb WHERE id = $3',
+      ['pending_clarification', JSON.stringify([{ question, answer: '' }]), id]
+    );
+    await failEstimateWrites('final', async () => {
+      try {
+        await assertNoMutation({
+          db,
+          tables: [{ name: 'tasks', key: 'id' }, { name: 'estimates', key: 'id' }],
+          safety: mutationBoundarySafety,
+          action: async () => {
+            await request(app.getHttpServer())
+              .patch(`/api/tasks/${id}/clarify`)
+              .auth(token, { type: 'bearer' })
+              .send({ clarifications: [{ question, answer: 'WCAG AA' }] })
+              .expect(500);
+          },
+        });
+        throw new Error('Expected MutationBoundary to detect partial writes');
+      } catch (error) {
+        expect(error).toBeInstanceOf(MutationBoundaryError);
+        const mutation = error as MutationBoundaryError;
+        expect(mutation.counts.find((count) => count.table === 'tasks')?.updated).toBeGreaterThan(0);
+      }
+    });
+  });
 
   const seedSources = async (sources: EstimateSource[]) => {
     const result = await post(task(false)).expect(201);
