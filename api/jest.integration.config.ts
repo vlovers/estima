@@ -11,6 +11,7 @@ export default {
     ],
   },
   moduleFileExtensions: ['ts', 'js', 'html'],
+  transformIgnorePatterns: ['/node_modules/(?!mutation-boundary/)'],
   rootDir: '..',
   testMatch: ['<rootDir>/api/src/**/*.int-spec.ts'],
   testTimeout: 60000,
