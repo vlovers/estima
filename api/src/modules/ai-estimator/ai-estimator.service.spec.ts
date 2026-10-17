@@ -4,6 +4,7 @@ import { Repository } from 'typeorm';
 import { AiEstimatorService } from './ai-estimator.service';
 import { Task } from '../tasks/entities/task.entity';
 import { CalibrationService } from '../calibration/calibration.service';
+import OpenAI from 'openai';
 
 class ConfigStub implements Partial<ConfigService> {
   get<T = any>(key: string, defaultValue?: T): T {
@@ -51,6 +52,32 @@ function buildService() {
 
   return service;
 }
+
+describe('AiEstimatorService provider timeout boundary', () => {
+  it('returns a sanitized gateway timeout without exposing the provider message', async () => {
+    const service = buildService();
+    jest
+      .spyOn((service as any).openai.chat.completions, 'create')
+      .mockRejectedValue(
+        new OpenAI.APIConnectionTimeoutError({
+          message: 'sensitive-upstream-timeout-detail',
+        })
+      );
+    await expect(
+      service.getAiAnalysis(
+        {
+          title: 'Task',
+          description: 'Bounded scope',
+          technology: 'React',
+        } as any,
+        project
+      )
+    ).rejects.toMatchObject({
+      status: 504,
+      message: 'AI estimation timed out. Please try again later.',
+    });
+  });
+});
 
 describe('AiEstimatorService.computeCalibratedEstimate', () => {
   it('computes p10/p50/p90 from bottom-up estimate and modifiers', async () => {

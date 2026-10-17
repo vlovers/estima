@@ -99,6 +99,10 @@ export function TaskForm({
       setValidation('Add a title, description and technology before saving.');
       return;
     }
+    if (!task && !values.useAiEstimate && values.manualEstimate === '') {
+      setValidation('Add a positive manual estimate or enable AI estimation.');
+      return;
+    }
     if (
       values.manualEstimate !== '' &&
       (!Number.isFinite(values.manualEstimate) || values.manualEstimate <= 0)
@@ -202,7 +206,12 @@ export function TaskForm({
               />
               <NumberInput
                 label="Manual estimate (hours)"
-                description="Optional. Keep your own estimate alongside the AI result."
+                description={
+                  !task && !values.useAiEstimate
+                    ? 'Required when AI estimation is off.'
+                    : 'Optional. Keep your own estimate alongside the AI result.'
+                }
+                required={!task && !values.useAiEstimate}
                 placeholder="e.g. 8"
                 min={0.1}
                 step={0.5}

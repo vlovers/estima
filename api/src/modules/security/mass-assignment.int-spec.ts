@@ -202,7 +202,7 @@ describe('Mass assignment security (disposable PostgreSQL)', () => {
     tags: ['backend'],
     useAiEstimate: true,
     breakdown: false,
-    manualEstimate: 0,
+    manualEstimate: 8,
     acceptanceCriteria: ['Works'],
     assumptions: [],
     constraints: [],

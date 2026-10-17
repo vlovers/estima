@@ -6,6 +6,8 @@ import {
   IsNotEmpty,
   IsOptional,
   IsNumber,
+  IsPositive,
+  ValidateIf,
   IsBoolean,
   IsString,
   IsEnum,
@@ -299,9 +301,18 @@ export class CreateTaskDto {
   @IsOptional()
   breakdown?: boolean;
 
-  @ApiProperty({ example: 8, description: "User's manual estimate in hours" })
+  @ApiProperty({
+    example: 8,
+    description: 'Positive manual hours; required when useAiEstimate is false',
+    required: false,
+    minimum: 0,
+    exclusiveMinimum: true,
+  })
+  @ValidateIf(
+    (dto, value) => dto.useAiEstimate === false || value !== undefined
+  )
   @IsNumber()
-  @IsOptional()
+  @IsPositive()
   manualEstimate?: number;
 
   @ApiProperty({

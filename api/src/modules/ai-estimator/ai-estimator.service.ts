@@ -1,7 +1,14 @@
 import { EstimateSource } from '../estimates/entities/estimate.entity';
 import { CreateTaskDto } from '../tasks/dto/create-task.dto';
 import { Project } from '../projects/entities/project.entity';
-import { Injectable, Logger } from '@nestjs/common';
+import {
+  BadGatewayException,
+  GatewayTimeoutException,
+  HttpException,
+  Injectable,
+  Logger,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Task } from '../tasks/entities/task.entity';
 import { ConfigService } from '@nestjs/config';
@@ -394,8 +401,13 @@ History: ${historyStr}`;
           specQuality.reasons || []
         ).join(' | ')}`
       );
-    } catch (e) {
-      this.logger.warn(`Spec quality assessment failed, falling back. ${e}`);
+    } catch (error) {
+      if (error instanceof OpenAI.APIError) {
+        throw this.providerFailure(error);
+      }
+      this.logger.warn(
+        'Spec quality response was invalid; using the fallback gate.'
+      );
     }
 
     const needsQuestions = (() => {
@@ -455,12 +467,15 @@ History: ${historyStr}`;
         schema
       );
 
-      const content = response.choices[0].message.content;
+      const content = response.choices?.[0]?.message?.content;
       if (!content) throw new Error('Empty AI response');
 
       const parsed = JSON.parse(content) as
         | AiEstimateResponse
         | AiQuestionsResponse;
+      if (!this.validateAiResponseStructure(parsed)) {
+        throw new Error('Invalid AI response structure');
+      }
 
       if (
         'questions' in parsed &&
@@ -500,12 +515,45 @@ History: ${historyStr}`;
 
       throw new Error('Invalid AI response structure');
     } catch (error) {
-      this.logger.error(
-        'Failed to get AI analysis',
-        (error as any)?.stack || String(error)
-      );
-      throw error;
+      throw this.providerFailure(error);
     }
+  }
+
+  // Never return or log provider messages, headers, request bodies or credentials.
+  private providerFailure(error: unknown): HttpException {
+    if (error instanceof HttpException) return error;
+    if (error instanceof OpenAI.APIConnectionTimeoutError) {
+      this.logger.warn('AI provider failure: category=timeout');
+      return new GatewayTimeoutException(
+        'AI estimation timed out. Please try again later.'
+      );
+    }
+    if (error instanceof OpenAI.APIError) {
+      const status = error.status;
+      const quota = status === 429 && error.code === 'insufficient_quota';
+      const configuration =
+        status === 400 ||
+        status === 401 ||
+        status === 403 ||
+        status === 404 ||
+        status === 422;
+      this.logger.warn(
+        `AI provider failure: category=${
+          quota ? 'quota' : configuration ? 'configuration' : 'unavailable'
+        } status=${typeof status === 'number' ? status : 'network'}`
+      );
+      return new ServiceUnavailableException(
+        quota
+          ? 'AI estimation is unavailable because the provider quota is exhausted. Contact the workspace administrator.'
+          : configuration
+          ? 'AI estimation is not configured correctly. Contact the workspace administrator.'
+          : 'AI estimation is temporarily unavailable. Please try again later.'
+      );
+    }
+    this.logger.warn('AI provider failure: category=invalid_response');
+    return new BadGatewayException(
+      'AI estimation returned an invalid response. Please try again.'
+    );
   }
 
   private validateAiResponseStructure(
@@ -515,20 +563,31 @@ History: ${historyStr}`;
 
     // Questions-only response
     if (Array.isArray(parsed.questions)) {
-      return parsed.subtasks == null && parsed.risks == null;
+      return (
+        parsed.questions.length > 0 &&
+        parsed.questions.every(
+          (question: unknown) =>
+            typeof question === 'string' && question.trim().length > 0
+        ) &&
+        parsed.subtasks == null &&
+        parsed.risks == null
+      );
     }
 
     // Estimate response
     if (Array.isArray(parsed.subtasks)) {
-      const validSubtasks = parsed.subtasks.every(
-        (s: any) =>
-          s &&
-          typeof s.title === 'string' &&
-          typeof s.description === 'string' &&
-          typeof s.estimateHours === 'number' &&
-          isFinite(s.estimateHours) &&
-          typeof s.explanation === 'string'
-      );
+      const validSubtasks =
+        parsed.subtasks.length > 0 &&
+        parsed.subtasks.every(
+          (s: any) =>
+            s &&
+            typeof s.title === 'string' &&
+            typeof s.description === 'string' &&
+            typeof s.estimateHours === 'number' &&
+            isFinite(s.estimateHours) &&
+            s.estimateHours > 0 &&
+            typeof s.explanation === 'string'
+        );
       const validRisks =
         parsed.risks == null ||
         (Array.isArray(parsed.risks) &&
@@ -561,7 +620,11 @@ History: ${historyStr}`;
       const content = res.choices[0].message.content;
       return this.parseEstimate(content ?? '');
     } catch (error) {
-      this.logger.error('Failed to get AI estimate', error.stack);
+      // The top-down cross-check is optional; retain its existing fallback,
+      // but never log the upstream error body or key.
+      this.logger.warn(
+        'AI top-down cross-check unavailable; using the existing fallback.'
+      );
       return 0;
     }
   }

@@ -1,5 +1,5 @@
 import { NotFoundException } from '@nestjs/common';
-import { Repository } from 'typeorm';
+import { EntityManager, Repository } from 'typeorm';
 import { EstimatesService } from './estimates.service';
 import { Estimate, EstimateSource } from './entities/estimate.entity';
 import { Task } from '../tasks/entities/task.entity';
@@ -17,6 +17,7 @@ const buildQueryBuilder = (result: {
   delete: jest.fn().mockReturnThis(),
   from: jest.fn().mockReturnThis(),
   set: jest.fn().mockReturnThis(),
+  setLock: jest.fn().mockReturnThis(),
   getOne: jest.fn().mockResolvedValue(result.getOne ?? null),
   getMany: jest.fn().mockResolvedValue(result.getMany ?? []),
   execute: jest.fn().mockResolvedValue(result.execute ?? { affected: 0 }),
@@ -42,12 +43,20 @@ describe('EstimatesService tenant isolation', () => {
         async () => ({ identifiers: [{ id: 'estimate-a' }] } as any)
       ),
       findOne: jest.fn(),
+      update: jest.fn().mockResolvedValue({ affected: 1 }),
       createQueryBuilder: jest.fn(() => estimateQb as any),
     } as unknown as jest.Mocked<Repository<Estimate>>;
 
     taskRepository = {
       createQueryBuilder: jest.fn(() => taskQb as any),
     } as unknown as jest.Mocked<Repository<Task>>;
+    const manager = {
+      getRepository: (entity: unknown) =>
+        entity === Task ? taskRepository : estimateRepository,
+      transaction: (callback: (transaction: EntityManager) => unknown) =>
+        callback(manager as unknown as EntityManager),
+    };
+    Object.assign(taskRepository, { manager });
 
     return {
       estimateQb,
@@ -100,6 +109,52 @@ describe('EstimatesService tenant isolation', () => {
       { userId: 'user-a' }
     );
   });
+
+  it('initializes manual estimate hours without leaving the default zero final value', async () => {
+    const { service } = buildService(true);
+    estimateRepository.findOne.mockResolvedValue(null);
+    await service.createOrUpdateManualEstimate('task-a', 8, 'user-a');
+    expect(estimateRepository.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        source: EstimateSource.MANUAL,
+        manualEstimate: 8,
+        finalEstimate: 8,
+      })
+    );
+  });
+
+  it.each([EstimateSource.MANUAL, EstimateSource.AI, EstimateSource.FINAL])(
+    'updates manual hours on %s without changing an AI/final result',
+    async (source) => {
+      const { service } = buildService(true);
+      const estimate = {
+        id: 'estimate-a',
+        source,
+        finalEstimate: 8,
+      } as Estimate;
+      estimateRepository.findOne.mockImplementation(async (options) =>
+        (options.where as { source: EstimateSource }).source === source
+          ? estimate
+          : null
+      );
+      const result = await service.createOrUpdateManualEstimate(
+        'task-a',
+        14,
+        'user-a'
+      );
+      expect(result.manualEstimate).toBe(14);
+      expect(result.finalEstimate).toBe(
+        source === EstimateSource.MANUAL ? 14 : 8
+      );
+      expect(estimateRepository.update).toHaveBeenCalledWith(
+        { task: { id: 'task-a' }, source },
+        {
+          manualEstimate: 14,
+          ...(source === EstimateSource.MANUAL ? { finalEstimate: 14 } : {}),
+        }
+      );
+    }
+  );
 
   it('returns 404 when detail query cannot find an owned estimate', async () => {
     const { service } = buildService(true);
