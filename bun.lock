@@ -79,6 +79,7 @@
         "jest": "^30.0.2",
         "jiti": "2.4.2",
         "jsdom": "~22.1.0",
+        "mutation-boundary": "github:vlovers/mutation-boundary#9e0045ba31c15d6d06077d248cb5aae626a93944",
         "nx": "21.3.2",
         "prettier": "^2.6.2",
         "supertest": "^7.3.1",
@@ -2241,6 +2242,8 @@
     "multer": ["multer@https://registry.npmjs.org/multer/-/multer-2.0.2.tgz", { "dependencies": { "append-field": "^1.0.0", "busboy": "^1.6.0", "concat-stream": "^2.0.0", "mkdirp": "^0.5.6", "object-assign": "^4.1.1", "type-is": "^1.6.18", "xtend": "^4.0.2" } }],
 
     "multicast-dns": ["multicast-dns@https://registry.npmjs.org/multicast-dns/-/multicast-dns-7.2.5.tgz", { "dependencies": { "dns-packet": "^5.2.2", "thunky": "^1.0.2" } }],
+
+    "mutation-boundary": ["mutation-boundary@github:vlovers/mutation-boundary#9e0045b", {}, "vlovers-mutation-boundary-9e0045b"],
 
     "mute-stream": ["mute-stream@https://registry.npmjs.org/mute-stream/-/mute-stream-2.0.0.tgz", {}],
 
