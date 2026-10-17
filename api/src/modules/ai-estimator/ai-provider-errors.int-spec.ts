@@ -1,4 +1,5 @@
 import { INestApplication } from '@nestjs/common';
+import { observeFailureBoundary } from '../../database/testing/mutation-boundary-poc';
 import { Test } from '@nestjs/testing';
 import { DataSource } from 'typeorm';
 import { randomUUID } from 'crypto';
@@ -394,6 +395,44 @@ describe('AI provider failures (real SDK, Nest HTTP and disposable PostgreSQL)',
       expect(remoteIdleTransactions).toEqual([0, 0, 0]);
     }
   );
+
+  it('MutationBoundary PoC: detects partial clarification writes after a failed final estimate', async () => {
+    // A real pending clarification task; only this suite's disposable DB is touched.
+    const created = await post({ ...task(false), breakdown: true }).expect(201);
+    const id = created.body.id as string;
+    const question = 'What are the accessibility requirements?';
+    await db.query(
+      'UPDATE tasks SET status = $1, "clarificationHistory" = $2::jsonb WHERE id = $3',
+      ['pending_clarification', JSON.stringify([{ question, answer: '' }]), id]
+    );
+    await failEstimateWrites('final', async () => {
+      const changes = await observeFailureBoundary(
+        db,
+        [{ name: 'tasks', key: 'id' }, { name: 'estimates', key: 'id' }],
+        async () => {
+          await request(app.getHttpServer())
+            .patch(`/api/tasks/${id}/clarify`)
+            .auth(token, { type: 'bearer' })
+            .send({ clarifications: [{ question, answer: 'WCAG AA' }] })
+            .expect(500);
+        }
+      );
+      // This is a characterization test of the known bug, not a test of the fix.
+      expect(changes).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ table: 'tasks', kind: 'updated', key: expect.any(String) }),
+        ])
+      );
+      expect(
+        changes.some((change) =>
+          change.table === 'tasks' &&
+          change.kind === 'updated' &&
+          change.before?.status === 'pending_clarification' &&
+          change.after?.status === 'estimated'
+        )
+      ).toBe(true);
+    });
+  });
 
   const seedSources = async (sources: EstimateSource[]) => {
     const result = await post(task(false)).expect(201);
