@@ -23,7 +23,7 @@ const identifier = (value: string) => {
   return '"' + value.replace(/"/g, '""') + '"';
 };
 const stable = (value: unknown): string => {
-  if (value instanceof Date) return JSON.stringify(value.toISOString());
+  if (Object.prototype.toString.call(value) === '[object Date]') return JSON.stringify(Date.prototype.toISOString.call(value));
   if (typeof Buffer !== 'undefined' && Buffer.isBuffer(value)) return JSON.stringify(value.toString('base64'));
   if (Array.isArray(value)) return '[' + value.map(stable).join(',') + ']';
   if (value && typeof value === 'object') {
