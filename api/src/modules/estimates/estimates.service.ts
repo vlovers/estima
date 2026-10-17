@@ -3,8 +3,12 @@ import { CreateEstimateDto } from './dto/create-estimate.dto';
 import { EstimateSource } from './entities/estimate.entity';
 import { Estimate } from './entities/estimate.entity';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Injectable, NotFoundException } from '@nestjs/common';
-import { Repository } from 'typeorm';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import { EntityManager, Repository } from 'typeorm';
 import { Task } from '../tasks/entities/task.entity';
 
 @Injectable()
@@ -18,7 +22,8 @@ export class EstimatesService {
 
   async create(
     createEstimateDto: CreateEstimateDto,
-    userId?: string
+    userId?: string,
+    manager?: EntityManager
   ): Promise<Estimate> {
     const {
       taskId,
@@ -38,7 +43,7 @@ export class EstimatesService {
     } = createEstimateDto;
 
     if (userId) {
-      await this.ensureTaskOwnedByUser(taskId, userId);
+      await this.ensureTaskOwnedByUser(taskId, userId, manager);
     }
 
     const estimateData: Partial<Estimate> = {
@@ -58,8 +63,10 @@ export class EstimatesService {
       task: { id: taskId } as any,
     };
 
-    const estimate = this.estimateRepository.create(estimateData);
-    const inserted = await this.estimateRepository.insert(estimate);
+    const repository =
+      manager?.getRepository(Estimate) ?? this.estimateRepository;
+    const estimate = repository.create(estimateData);
+    const inserted = await repository.insert(estimate);
     estimate.id = inserted.identifiers[0].id;
     return estimate;
   }
@@ -168,11 +175,33 @@ export class EstimatesService {
   async createOrUpdateManualEstimate(
     taskId: string,
     hours: number,
-    userId?: string
+    userId?: string,
+    manager?: EntityManager
   ): Promise<Estimate> {
-    if (userId) {
-      await this.ensureTaskOwnedByUser(taskId, userId);
+    if (!Number.isFinite(hours) || hours <= 0) {
+      throw new BadRequestException(
+        'Manual estimate must be greater than zero.'
+      );
     }
+    if (!manager) {
+      return this.taskRepository.manager.transaction((transaction) =>
+        this.createOrUpdateManualEstimate(taskId, hours, userId, transaction)
+      );
+    }
+
+    // Serialize reference selection and insertion for the same task. Use the
+    // caller's manager so uncommitted task creation is visible and rolls back.
+    const query = manager
+      .getRepository(Task)
+      .createQueryBuilder('task')
+      .innerJoin('task.project', 'project')
+      .where('task.id = :taskId', { taskId });
+    if (userId) query.andWhere('project."userId" = :userId', { userId });
+    const task = await query
+      .setLock('pessimistic_write', undefined, ['task'])
+      .getOne();
+    if (!task) throw new NotFoundException(`Task with id ${taskId} not found`);
+    const repository = manager.getRepository(Estimate);
 
     // Match the displayed manual reference: a dedicated manual record first,
     // otherwise the preferred final/aggregate/AI result. An unordered findOne
@@ -184,36 +213,47 @@ export class EstimatesService {
       EstimateSource.AI_SUBTASK_SUM,
       EstimateSource.AI,
     ]) {
-      existingEstimate = await this.estimateRepository.findOne({
+      existingEstimate = await repository.findOne({
         where: { task: { id: taskId }, source },
+        lock: { mode: 'pessimistic_write', tables: ['estimates'] },
       });
       if (existingEstimate) break;
     }
 
     if (existingEstimate) {
-      existingEstimate.manualEstimate = hours;
-      if (existingEstimate.source === EstimateSource.MANUAL) {
-        existingEstimate.finalEstimate = hours;
-      }
-      return this.estimateRepository.save(existingEstimate);
+      const changes = {
+        manualEstimate: hours,
+        ...(existingEstimate.source === EstimateSource.MANUAL
+          ? { finalEstimate: hours }
+          : {}),
+      };
+      // Update only reference fields, never save a stale AI/final entity snapshot.
+      // Synchronize duplicate legacy records of the chosen source so whichever
+      // record the client reads first has the same displayed reference.
+      await repository.update(
+        { task: { id: taskId }, source: existingEstimate.source },
+        changes
+      );
+      return { ...existingEstimate, ...changes };
     }
 
-    const newEstimate = this.estimateRepository.create({
+    const newEstimate = repository.create({
       task: { id: taskId },
       manualEstimate: hours,
       finalEstimate: hours,
       source: EstimateSource.MANUAL,
     });
-    const inserted = await this.estimateRepository.insert(newEstimate);
+    const inserted = await repository.insert(newEstimate);
     newEstimate.id = inserted.identifiers[0].id;
     return newEstimate;
   }
 
   private async ensureTaskOwnedByUser(
     taskId: string,
-    userId: string
+    userId: string,
+    manager?: EntityManager
   ): Promise<void> {
-    const task = await this.taskRepository
+    const task = await (manager?.getRepository(Task) ?? this.taskRepository)
       .createQueryBuilder('task')
       .innerJoin('task.project', 'project')
       .where('task.id = :taskId', { taskId })

@@ -40,6 +40,25 @@ function show(props: Partial<Parameters<typeof TaskForm>[0]> = {}) {
   return { ...view, onSubmit };
 }
 describe('shared task editor', () => {
+  it('requires a positive manual estimate when AI is disabled for creation', () => {
+    const { container, onSubmit } = show();
+    fireEvent.change(screen.getByLabelText(/Task title/), {
+      target: { value: 'Manual task' },
+    });
+    fireEvent.change(screen.getByLabelText(/^Description/), {
+      target: { value: 'Defined manual scope' },
+    });
+    fireEvent.change(screen.getByLabelText(/^Technology/), {
+      target: { value: 'React' },
+    });
+    fireEvent.click(screen.getByText('Use AI estimate'));
+    expect(screen.getByLabelText(/^Manual estimate/)).toBeRequired();
+    fireEvent.submit(container.querySelector('form')!);
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'Add a positive manual estimate or enable AI estimation.'
+    );
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
   it('progressively discloses optional scope instead of overwhelming the basic form', async () => {
     show();
     expect(screen.getByLabelText(/Task title/)).toBeVisible();
