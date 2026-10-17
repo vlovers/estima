@@ -41,6 +41,17 @@ jobs:
       # before the generated bun.lock is committed. Restore bun ci before merge.
       - name: Install experimental dependencies
         run: bun install --ignore-scripts
+      # Git dependencies installed with --ignore-scripts may not include built dist.
+      # Build the isolated dependency in CI without changing production workflows.
+      - name: Build MutationBoundary Git dependency
+        run: |
+          test -f node_modules/mutation-boundary/package.json
+          if [ ! -f node_modules/mutation-boundary/dist/index.d.ts ]; then
+            cd node_modules/mutation-boundary
+            bun install --ignore-scripts
+            bun run build
+          fi
+          test -f node_modules/mutation-boundary/dist/index.d.ts
       - name: Start disposable PostgreSQL 17
         run: |
           docker run -d --name "$MIGRATION_TEST_CONTAINER" \
