@@ -51,15 +51,58 @@ deterministic regression scenario, not a claim about the historical live respons
   retry policy; transient model/schema compatibility fallback is unchanged.
 - Validate the existing analysis response structure before caching or persistence.
   Keep the existing optional top-down fallback, with sanitized logging.
-- Honor explicit AI opt-out, persist the supplied task context and optional manual
+- Honor explicit AI opt-out, persist the supplied task context and required positive manual
   estimate, and retain existing behavior for older callers that omit the flag.
 - Initialize/update a manual-source result with the submitted manual hours. Adding
   a manual reference selects the displayed result deterministically and does not
   change its AI/final estimate.
 
-No endpoints, DTO contracts, authorization behavior, authentication implementation,
-schemas or migrations were changed. Task edits still update fields and manual
+Endpoint and payload shapes, authorization behavior, authentication implementation,
+schemas and migrations are unchanged. Manual-hour validation is deliberately
+tightened as documented below. Task edits still update fields and manual
 references; they do not invoke a new AI analysis (existing endpoint behavior).
+
+## PR review completion
+
+**Hours and status policy:** On task creation/update, a supplied `manualEstimate`
+must be a finite number greater than zero. Zero, negative values and explicit null
+return HTTP 400 without writes; positive fractions are valid. Omit the value on
+PATCH to retain the existing reference. AI creation may omit manual hours.
+Explicit `useAiEstimate: false` on creation requires positive hours. `TaskStatus`
+has only `pending_clarification` and `estimated`, so accepting an empty manual
+task would falsely claim estimation or invent clarification questions. Requiring
+hours avoids a schema/status expansion. The task form marks this input required
+when AI is off; update forms retain their existing behavior.
+
+**Atomic creation:** Manual task and estimate writes share one TypeORM manager and
+transaction. Initial AI analysis and top-down calibration finish before opening
+a transaction; parent, children and all estimate inserts then commit together.
+Questions-only creation is a single insert. PostgreSQL triggers injected failures
+at manual-estimate insertion and the final AI estimate, with breakdown both on and
+off; total task/estimate counts were unchanged after rollback. Provider callbacks
+observed zero idle database transactions during all three remote request phases.
+
+**References and concurrency:** Task PATCH uses a shared transaction. Reference
+updates check ownership and lock the task row, then the selected estimate row.
+Precedence remains MANUAL, FINAL, AI_SUBTASK_SUM, AI. Only reference fields change;
+AI/final hours, confidence and explanations are preserved. Dedicated MANUAL rows
+also synchronize final hours. Legacy duplicate rows of the selected source are
+updated together so an arbitrary first record cannot expose a stale reference;
+other-source historical snapshots stay unchanged. Tests cover legacy zero manual
+results, duplicate manual rows, mixed-source fallback, concurrent reference
+creation without duplicates, a concurrent final-hours edit, and cross-tenant denial.
+These locks serialize the manual-reference operation; they do not add a global
+uniqueness constraint or redefine generic estimate CRUD semantics.
+
+**Explicit boundary:** This atomicity claim covers initial task creation, not
+clarification completion. A separate disposable-database audit injected a final
+write failure into `TasksService.clarify`: HTTP 500 left status `estimated`, two
+children and zero final estimates. Previously saved answers remained committed;
+a retry is rejected because the task is no longer pending. Safely addressing
+answer preservation, concurrent submissions and stale provider responses needs
+the focused follow-up [issue #10](https://github.com/vlovers/estima/issues/10).
+The audit was executed separately, not counted as a passing regression for broken
+behavior. No transaction is claimed for that existing path.
 
 ## Reproduction and verification
 
@@ -100,15 +143,20 @@ create a separate detached worktree at `314258e`, copy only the new
 `ai-provider-errors.int-spec.ts` into it, install frozen dependencies and run the
 same focused command. Its expected assertions fail against the base error behavior.
 
-For the browser smoke, build the API image and run:
+For the browser smoke, build both images and use a separate frontend container:
 
 ```sh
 docker build -f api/Dockerfile -t estima-api:real-integration .
-node scripts/testing/real-workspace-smoke.cjs
+docker build -f web/Dockerfile -t estima-web:pr9-review .
+docker run -d --rm --name estima-pr9-review-web -p 127.0.0.1:8088:80 estima-web:pr9-review
+ESTIMA_SMOKE_FRONTEND_URL=http://localhost:8088 node scripts/testing/real-workspace-smoke.cjs
+docker stop estima-pr9-review-web
 ```
 
-This local-environment harness expects the existing Docker frontend at
-`http://localhost`, test database container `ai-estimates-migration-test-db`,
+This local-environment harness defaults to a current-branch Docker frontend at
+`http://localhost`; `ESTIMA_SMOKE_FRONTEND_URL` selects another localhost port as
+above. Only the disposable API's CORS configuration adds that test frontend origin.
+It expects test database container `ai-estimates-migration-test-db`,
 network `ai-estimates-monorepo_app-network`, and free ports 3301 and 4319. It uses
 Chrome on macOS, or `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH`, or installed Playwright
 Chromium. It requires Docker access and local socket/browser permissions.
@@ -133,6 +181,7 @@ node node_modules/typescript/bin/tsc --noEmit -p api/tsconfig.app.json
 node node_modules/typescript/bin/tsc --noEmit -p api/tsconfig.spec.json
 node node_modules/typescript/bin/tsc --noEmit -p api/tsconfig.integration.json
 node node_modules/typescript/bin/tsc --noEmit -p web/tsconfig.app.json
+node node_modules/typescript/bin/tsc --noEmit -p web/tsconfig.spec.json
 NX_DAEMON=false NX_ISOLATE_PLUGINS=false bun run lint
 node node_modules/jest/bin/jest.js --config api/jest.config.ts --runInBand
 node node_modules/vitest/vitest.mjs run --config web/vite.config.ts
@@ -147,11 +196,11 @@ bun run build:web
 | API app, API unit/integration tests and web app TypeScript | Passed                                         | No database/provider                                                                |
 | API and frontend lint                                      | Passed                                         | No database/provider                                                                |
 | Backend unit tests                                         | 131 passed, 15 suites                          | Repository/provider mocks; local HTTP CORS checks                                   |
-| Frontend unit tests                                        | 51 passed, 8 files                             | API mocks                                                                           |
-| HTTP/PostgreSQL integration tests                          | 167 passed, 5 suites                           | Real disposable PostgreSQL; deterministic provider boundaries                       |
-| New AI error/persistence integration suite                 | 7 passed, included above                       | Real Nest HTTP, OpenAI SDK and PostgreSQL; local HTTP provider stub                 |
+| Frontend unit tests                                        | 52 passed, 8 files                             | API mocks                                                                           |
+| HTTP/PostgreSQL integration tests                          | 181 passed, 5 suites                           | Real disposable PostgreSQL; deterministic provider boundaries                       |
+| New AI error/persistence integration suite                 | 21 passed, included above                      | Real Nest HTTP, OpenAI SDK and PostgreSQL; local HTTP provider stub                 |
 | API production Docker build and startup                    | Passed                                         | Native local ARM64 Docker image                                                     |
-| Web production build                                       | Passed                                         | Same frontend sources as the Docker-served UI                                       |
+| Web production build                                       | Passed                                         | Production build and new isolated ARM64 Docker image                                |
 | Docker browser smoke                                       | Passed                                         | Real Nginx frontend, isolated Nest API container and PostgreSQL; provider stub only |
 | CORS preflights                                            | Passed for both local origins with credentials | Real isolated Docker API                                                            |
 
@@ -166,7 +215,12 @@ that final hours remain unchanged. The quota failure left no partially created t
 Backend unit tests initially encountered sandbox socket restrictions; rerunning
 with local server permissions passed. Initial browser harness attempts exposed
 selector/overlay timing issues; named dialogs and the visible switch label fixed
-the harness without frontend changes.
+the harness without redesign changes. During review, an additional estimate-row
+lock initially supplied an entity name where TypeORM requires the table name;
+the PostgreSQL suite caught 14 failures. Correcting it to `estimates` restored the
+full 181-test pass. These failed intermediate runs were not pushed.
+A browser harness run also used an unsupported matcher; switching to
+Playwright's native `required` property assertion restored the passing smoke.
 
 ## Limitations
 

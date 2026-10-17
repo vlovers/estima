@@ -7,6 +7,12 @@ const { randomUUID } = require('node:crypto');
 const { chromium, expect } = require('@playwright/test');
 
 async function main() {
+  const frontendURL =
+    process.env.ESTIMA_SMOKE_FRONTEND_URL || 'http://localhost';
+  assert(
+    /^http:\/\/localhost(?::\d+)?$/.test(frontendURL),
+    'Smoke frontend must be local HTTP'
+  );
   require('ts-node').register({
     project: 'api/tsconfig.app.json',
     transpileOnly: true,
@@ -122,7 +128,9 @@ async function main() {
       'OPENAI_BASE_URL=http://host.docker.internal:4319/v1',
       `JWT_ACCESS_SECRET=${randomUUID()}${randomUUID()}`,
       `JWT_REFRESH_SECRET=${randomUUID()}${randomUUID()}`,
-      'CORS_ORIGINS=http://localhost,http://localhost:4200',
+      `CORS_ORIGINS=${[
+        ...new Set(['http://localhost', 'http://localhost:4200', frontendURL]),
+      ].join(',')}`,
       'PORT=3000',
     ].join('\n'),
     { mode: 0o600 }
@@ -207,7 +215,7 @@ async function main() {
     const email = `smoke-${randomUUID()}@example.test`,
       password = `Test-${randomUUID()}`;
     stage = 'registration';
-    await page.goto('http://localhost/register');
+    await page.goto(`${frontendURL}/register`);
     stage = 'registration form';
     await page.getByLabel('Email address').fill(email);
     await page.getByLabel(/^Password/).fill(password);
@@ -305,6 +313,11 @@ async function main() {
       await dialog.getByLabel(/^Technology/).fill('React');
       if (!ai)
         await dialog.getByText('Use AI estimate', { exact: true }).click();
+      if (!ai)
+        await expect(dialog.getByLabel(/^Manual estimate/)).toHaveJSProperty(
+          'required',
+          true
+        );
       await dialog.getByLabel(/^Manual estimate/).fill('8');
       await dialog
         .getByRole('button', { name: 'Create task', exact: true })
@@ -400,14 +413,12 @@ async function main() {
     assert(
       !project.tasks.some((task) => task.title === 'Quota failure smoke task')
     );
-    const aiCard = page
-      .getByRole('article')
-      .filter({
-        has: page.getByRole('heading', {
-          name: 'AI persistence smoke task',
-          exact: true,
-        }),
-      });
+    const aiCard = page.getByRole('article').filter({
+      has: page.getByRole('heading', {
+        name: 'AI persistence smoke task',
+        exact: true,
+      }),
+    });
     await aiCard
       .getByRole('button', { name: 'Manual estimate', exact: true })
       .click();
