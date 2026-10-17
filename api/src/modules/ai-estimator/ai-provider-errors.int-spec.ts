@@ -1,5 +1,5 @@
 import { INestApplication } from '@nestjs/common';
-import { assertNoMutation } from 'mutation-boundary';
+import { assertNoMutation, MutationBoundaryError } from 'mutation-boundary';
 import { Test } from '@nestjs/testing';
 import { DataSource } from 'typeorm';
 import { randomUUID } from 'crypto';
@@ -415,23 +415,25 @@ describe('AI provider failures (real SDK, Nest HTTP and disposable PostgreSQL)',
       ['pending_clarification', JSON.stringify([{ question, answer: '' }]), id]
     );
     await failEstimateWrites('final', async () => {
-      await expect(assertNoMutation({
-        db,
-        tables: [{ name: 'tasks', key: 'id' }, { name: 'estimates', key: 'id' }],
-        safety: mutationBoundarySafety,
-        action: async () => {
-          await request(app.getHttpServer())
-            .patch(`/api/tasks/${id}/clarify`)
-            .auth(token, { type: 'bearer' })
-            .send({ clarifications: [{ question, answer: 'WCAG AA' }] })
-            .expect(500);
-        },
-      })).rejects.toMatchObject({
-        name: 'MutationBoundaryError',
-        counts: expect.arrayContaining([
-          expect.objectContaining({ table: 'tasks', updated: expect.any(Number) }),
-        ]),
-      });
+      try {
+        await assertNoMutation({
+          db,
+          tables: [{ name: 'tasks', key: 'id' }, { name: 'estimates', key: 'id' }],
+          safety: mutationBoundarySafety,
+          action: async () => {
+            await request(app.getHttpServer())
+              .patch(`/api/tasks/${id}/clarify`)
+              .auth(token, { type: 'bearer' })
+              .send({ clarifications: [{ question, answer: 'WCAG AA' }] })
+              .expect(500);
+          },
+        });
+        throw new Error('Expected MutationBoundary to detect partial writes');
+      } catch (error) {
+        expect(error).toBeInstanceOf(MutationBoundaryError);
+        const mutation = error as MutationBoundaryError;
+        expect(mutation.counts.find((count) => count.table === 'tasks')?.updated).toBeGreaterThan(0);
+      }
     });
   });
 
