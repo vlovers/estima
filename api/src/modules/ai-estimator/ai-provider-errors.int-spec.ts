@@ -264,5 +264,24 @@ describe('AI provider failures (real SDK, Nest HTTP and disposable PostgreSQL)',
         result.body.id,
       ])
     ).toHaveLength(2);
+    const updated = await request(app.getHttpServer())
+      .patch(`/api/tasks/${result.body.id}`)
+      .auth(token, { type: 'bearer' })
+      .send({ manualEstimate: 14 })
+      .expect(200);
+    expect(
+      updated.body.estimates.find(
+        (estimate: { source: string }) => estimate.source === 'final'
+      )
+    ).toMatchObject({ manualEstimate: 14 });
+    expect(
+      updated.body.estimates.map(
+        (estimate: { finalEstimate: number }) => estimate.finalEstimate
+      )
+    ).toEqual(
+      loaded.body.estimates.map(
+        (estimate: { finalEstimate: number }) => estimate.finalEstimate
+      )
+    );
   });
 });

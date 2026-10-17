@@ -174,11 +174,21 @@ export class EstimatesService {
       await this.ensureTaskOwnedByUser(taskId, userId);
     }
 
-    const existingEstimate = await this.estimateRepository.findOne({
-      where: {
-        task: { id: taskId },
-      },
-    });
+    // Match the displayed manual reference: a dedicated manual record first,
+    // otherwise the preferred final/aggregate/AI result. An unordered findOne
+    // can update an older AI record while leaving the displayed final reference stale.
+    let existingEstimate: Estimate | null = null;
+    for (const source of [
+      EstimateSource.MANUAL,
+      EstimateSource.FINAL,
+      EstimateSource.AI_SUBTASK_SUM,
+      EstimateSource.AI,
+    ]) {
+      existingEstimate = await this.estimateRepository.findOne({
+        where: { task: { id: taskId }, source },
+      });
+      if (existingEstimate) break;
+    }
 
     if (existingEstimate) {
       existingEstimate.manualEstimate = hours;

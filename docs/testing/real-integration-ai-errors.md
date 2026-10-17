@@ -24,7 +24,7 @@ implementation, six regression cases failed with HTTP 500; the successful
 provider-response fixture persisted correctly. This distinguishes the observed
 quota/configuration problem from the confirmed application error-handling defect.
 
-Two further defects were confirmed during manual-estimate verification:
+Additional defects were confirmed during manual-estimate verification:
 
 - Explicit `useAiEstimate: false` still called AI and failed when quota was
   exhausted. The request flag was ignored by task creation.
@@ -32,6 +32,10 @@ Two further defects were confirmed during manual-estimate verification:
   database default `finalEstimate` at zero. The UI selects `finalEstimate` for the
   displayed manual result. Updating a manual-source record also left that value
   stale. A real database assertion observed manual hours 8 and displayed hours 0.
+- Updating a task with both AI and final records used an unordered `findOne`.
+  A PostgreSQL regression observed that submitting 14 left the final record's
+  displayed manual reference at 8. Record selection now follows the UI's explicit
+  manual/final/aggregate/AI precedence without changing the AI/final hours.
 
 Malformed provider JSON was separately reproduced as a generic 500. It is a
 deterministic regression scenario, not a claim about the historical live response.
@@ -50,7 +54,8 @@ deterministic regression scenario, not a claim about the historical live respons
 - Honor explicit AI opt-out, persist the supplied task context and optional manual
   estimate, and retain existing behavior for older callers that omit the flag.
 - Initialize/update a manual-source result with the submitted manual hours. Adding
-  a manual reference to an AI/final-source record does not change its estimate.
+  a manual reference selects the displayed result deterministically and does not
+  change its AI/final estimate.
 
 No endpoints, DTO contracts, authorization behavior, authentication implementation,
 schemas or migrations were changed. Task edits still update fields and manual
@@ -87,6 +92,8 @@ It exercises:
    zero provider requests, manual hours persisted; PATCH the hours and verify them.
 6. Return deterministic successful quality/analysis/top-down responses; verify AI
    and final estimates through subsequent HTTP GET and direct PostgreSQL reads.
+   Update the manual reference and verify the displayed final reference changes
+   while both AI and final hours remain unchanged.
 
 To reproduce the before/after comparison without touching an existing worktree,
 create a separate detached worktree at `314258e`, copy only the new
@@ -153,7 +160,8 @@ HttpOnly refresh cookie, refresh after a rejected resource token, logout and
 refresh rejection, project/task creation/editing/deletion, manual creation with
 zero provider calls, manual-hour updates, sanitized quota errors with preserved
 form input, and successful deterministic AI result persistence after reload.
-The quota failure left no partially created task.
+It also verifies the updated manual reference on an AI/final task in the UI and
+that final hours remain unchanged. The quota failure left no partially created task.
 
 Backend unit tests initially encountered sandbox socket restrictions; rerunning
 with local server permissions passed. Initial browser harness attempts exposed
@@ -168,6 +176,8 @@ AI persistence checks use explicitly deterministic provider responses, not live 
 Browser checks cover Chromium desktop, not all browsers or physical devices.
 The smoke uses a separate API/database so existing development records and secrets
 remain intact. It does not replace or restart the user's running API.
+Historical manual records are not rewritten; saving manual hours applies the
+synchronization fix to those records without a data migration.
 
 An existing result-contract inconsistency remains outside this error-handling fix:
 the calibrated final estimate emits confidence as 70, while the redesigned card

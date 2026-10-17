@@ -123,7 +123,11 @@ describe('EstimatesService tenant isolation', () => {
         source,
         finalEstimate: 8,
       } as Estimate;
-      estimateRepository.findOne.mockResolvedValue(estimate);
+      estimateRepository.findOne.mockImplementation(async (options) =>
+        (options.where as { source: EstimateSource }).source === source
+          ? estimate
+          : null
+      );
       estimateRepository.save = jest.fn().mockResolvedValue(estimate);
       await service.createOrUpdateManualEstimate('task-a', 14, 'user-a');
       expect(estimate.manualEstimate).toBe(14);

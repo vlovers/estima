@@ -400,6 +400,44 @@ async function main() {
     assert(
       !project.tasks.some((task) => task.title === 'Quota failure smoke task')
     );
+    const aiCard = page
+      .getByRole('article')
+      .filter({
+        has: page.getByRole('heading', {
+          name: 'AI persistence smoke task',
+          exact: true,
+        }),
+      });
+    await aiCard
+      .getByRole('button', { name: 'Manual estimate', exact: true })
+      .click();
+    const aiManualDialog = page.getByRole('dialog', {
+      name: 'Set a manual estimate',
+      exact: true,
+    });
+    await aiManualDialog.getByLabel('Manual Estimate (hours)').fill('18');
+    await aiManualDialog
+      .getByRole('button', { name: 'Set Estimate', exact: true })
+      .click();
+    await aiManualDialog.waitFor({ state: 'hidden' });
+    await expect(aiCard).toContainText('Manual reference 18 h');
+    const refreshed = await fetch(
+      `http://localhost:3301/api/projects/${projectId}`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    const refreshedProject = await refreshed.json();
+    const updatedAi = refreshedProject.tasks.find(
+      (task) => task.id === aiTask.id
+    );
+    assert.equal(
+      updatedAi.estimates.find((estimate) => estimate.source === 'final')
+        .finalEstimate,
+      aiTask.estimates.find((estimate) => estimate.source === 'final')
+        .finalEstimate
+    );
+    steps.push(
+      'manual reference update on AI/final task preserves AI hours and updates the UI'
+    );
     await page.screenshot({
       path: `${root}/persisted-estimates.png`,
       fullPage: true,
