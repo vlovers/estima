@@ -1,5 +1,5 @@
 import { INestApplication } from '@nestjs/common';
-import { observeFailureBoundary } from '../../database/testing/mutation-boundary-poc';
+import { assertNoMutation } from 'mutation-boundary';
 import { Test } from '@nestjs/testing';
 import { DataSource } from 'typeorm';
 import { randomUUID } from 'crypto';
@@ -31,6 +31,11 @@ import {
 describe('AI provider failures (real SDK, Nest HTTP and disposable PostgreSQL)', () => {
   let app: INestApplication;
   let db: DataSource;
+  let mutationBoundarySafety: {
+    expectedDatabase: string;
+    expectedUser: string;
+    confirmDisposableTestDatabase: true;
+  };
   let provider: Server;
   let mode = 'success';
   let calls = 0;
@@ -146,6 +151,11 @@ describe('AI provider failures (real SDK, Nest HTTP and disposable PostgreSQL)',
     );
     assertDisposablePostgresConfig(config);
     assertDisposableDockerIsolation(config);
+    mutationBoundarySafety = {
+      expectedDatabase: config.targetDatabase,
+      expectedUser: config.username,
+      confirmDisposableTestDatabase: true,
+    };
     const admin = createAdminDataSource(config);
     await initializeWithRetry(admin);
     try {
@@ -396,8 +406,7 @@ describe('AI provider failures (real SDK, Nest HTTP and disposable PostgreSQL)',
     }
   );
 
-  it('MutationBoundary PoC: detects partial clarification writes after a failed final estimate', async () => {
-    // A real pending clarification task; only this suite's disposable DB is touched.
+  it('MutationBoundary package: detects partial clarification writes after failed final estimate', async () => {
     const created = await post({ ...task(false), breakdown: true }).expect(201);
     const id = created.body.id as string;
     const question = 'What are the accessibility requirements?';
@@ -406,31 +415,23 @@ describe('AI provider failures (real SDK, Nest HTTP and disposable PostgreSQL)',
       ['pending_clarification', JSON.stringify([{ question, answer: '' }]), id]
     );
     await failEstimateWrites('final', async () => {
-      const changes = await observeFailureBoundary(
+      await expect(assertNoMutation({
         db,
-        [{ name: 'tasks', key: 'id' }, { name: 'estimates', key: 'id' }],
-        async () => {
+        tables: [{ name: 'tasks', key: 'id' }, { name: 'estimates', key: 'id' }],
+        safety: mutationBoundarySafety,
+        action: async () => {
           await request(app.getHttpServer())
             .patch(`/api/tasks/${id}/clarify`)
             .auth(token, { type: 'bearer' })
             .send({ clarifications: [{ question, answer: 'WCAG AA' }] })
             .expect(500);
-        }
-      );
-      // This is a characterization test of the known bug, not a test of the fix.
-      expect(changes).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({ table: 'tasks', kind: 'updated', key: expect.any(String) }),
-        ])
-      );
-      expect(
-        changes.some((change) =>
-          change.table === 'tasks' &&
-          change.kind === 'updated' &&
-          change.before?.status === 'pending_clarification' &&
-          change.after?.status === 'estimated'
-        )
-      ).toBe(true);
+        },
+      })).rejects.toMatchObject({
+        name: 'MutationBoundaryError',
+        counts: expect.arrayContaining([
+          expect.objectContaining({ table: 'tasks', updated: expect.any(Number) }),
+        ]),
+      });
     });
   });
 
