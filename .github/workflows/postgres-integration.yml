@@ -41,6 +41,12 @@ jobs:
       # before the generated bun.lock is committed. Restore bun ci before merge.
       - name: Install experimental dependencies
         run: bun install --ignore-scripts
+      - name: Export generated Bun lockfile
+        uses: actions/upload-artifact@v4
+        with:
+          name: mutation-boundary-generated-bun-lock
+          path: bun.lock
+          retention-days: 7
       # Git dependencies installed with --ignore-scripts may not include built dist.
       # Build the isolated dependency in CI without changing production workflows.
       - name: Build MutationBoundary Git dependency
