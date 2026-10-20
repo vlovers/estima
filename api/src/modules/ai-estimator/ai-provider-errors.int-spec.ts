@@ -30,6 +30,7 @@ import {
 describe('AI provider failures (real SDK, Nest HTTP and disposable PostgreSQL)', () => {
   let app: INestApplication;
   let db: DataSource;
+  let boundarySafety: { expectedDatabase: string; expectedUser: string; confirmDisposableTestDatabase: true };
   let provider: Server;
   let mode = 'success';
   let calls = 0;
@@ -172,6 +173,8 @@ describe('AI provider failures (real SDK, Nest HTTP and disposable PostgreSQL)',
     await app.init();
     db = app.get(DataSource);
     await verifyTargetIdentity(db, config);
+    const [identity] = await db.query('SELECT current_database() AS database, current_user AS username');
+    boundarySafety = { expectedDatabase: identity.database, expectedUser: identity.username, confirmDisposableTestDatabase: true };
     const account = await request(app.getHttpServer())
       .post('/api/auth/register')
       .send({
@@ -371,6 +374,29 @@ describe('AI provider failures (real SDK, Nest HTTP and disposable PostgreSQL)',
     );
     return counts;
   };
+
+  it('checks a failed manual HTTP request via published MutationBoundary without surviving writes', async () => {
+    // ts-jest compiles this suite as CommonJS; keep the package's ESM import native.
+    const { assertNoMutation } = await (new Function('return import("mutation-boundary")')() as Promise<typeof import('mutation-boundary')>);
+    const options = {
+      db,
+      tables: [
+        { name: 'tasks', key: 'id' },
+        { name: 'estimates', key: 'id' },
+      ],
+      safety: boundarySafety,
+    };
+    await failEstimateWrites('manual', async () => {
+      await assertNoMutation({
+        ...options,
+        action: async () => {
+          const response = await post(task(false)).expect(500);
+          expect(JSON.stringify(response.body)).not.toContain('controlled PR9');
+        },
+      });
+    });
+    expect(calls).toBe(0);
+  });
 
   it('rolls back a manual-only task when its estimate insert fails', async () => {
     const before = await rowCounts();
