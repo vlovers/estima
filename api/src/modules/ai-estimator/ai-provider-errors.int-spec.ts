@@ -1,5 +1,4 @@
 import { INestApplication } from '@nestjs/common';
-import { assertNoMutation, MutationBoundaryError } from 'mutation-boundary';
 import { Test } from '@nestjs/testing';
 import { DataSource } from 'typeorm';
 import { randomUUID } from 'crypto';
@@ -377,6 +376,8 @@ describe('AI provider failures (real SDK, Nest HTTP and disposable PostgreSQL)',
   };
 
   it('checks a failed manual HTTP request via published MutationBoundary without surviving writes', async () => {
+    // ts-jest compiles this suite as CommonJS; keep the package's ESM import native.
+    const { assertNoMutation } = await (new Function('return import("mutation-boundary")')() as Promise<typeof import('mutation-boundary')>);
     const options = {
       db,
       tables: [
