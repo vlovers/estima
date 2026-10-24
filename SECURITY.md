@@ -4,7 +4,7 @@ Estima is in active development. This document does **not** assert that the appl
 
 ## Report a vulnerability
 
-Do **not** create a public GitHub Issue containing exploit instructions, credentials, private user information or affected production URLs. Prefer the repository's GitHub **Report a vulnerability** / private security advisory feature if enabled. If unavailable, contact the maintainers privately via the channels listed on their GitHub profiles and share only the information necessary to coordinate disclosure.
+Do **not** create a public GitHub Issue containing exploit instructions, credentials, private user information or affected production URLs. Use GitHub's [private vulnerability report](https://github.com/vlovers/estima/security/advisories/new) **only if the repository has private vulnerability reporting enabled**. Availability has not been verified by this document. If that feature is unavailable, do not assume a GitHub profile or public comment is a secure channel. Request that maintainers enable private reporting or establish a verified private contact method **without disclosing any vulnerability details publicly**. Wait for a confirmed private channel before sharing reproduction details.
 
 A useful report describes the affected commit/version, expected versus observed behavior, safe reproduction steps, impact and mitigations. Never test against accounts or databases you do not own or have explicit permission to assess.
 
