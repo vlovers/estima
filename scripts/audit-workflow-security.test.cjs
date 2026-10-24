@@ -57,3 +57,13 @@ test('rejects checkout credentials configured outside checkout step', () => {
 test('rejects top-level read-all shorthand', () => {
   assert.match(auditWorkflow(workflow().replace('permissions:\n  contents: read', 'permissions: read-all')).join(' '), /explicit mapping/);
 });
+
+test('rejects dynamic local action reference', () => {
+  assert.match(auditWorkflow(workflow('./.github/actions/${{ inputs.action }}')).join(' '), /local action path/);
+});
+test('rejects traversing local action reference', () => {
+  assert.match(auditWorkflow(workflow('./../external/action')).join(' '), /local action path/);
+});
+test('accepts static local action reference', () => {
+  assert.deepEqual(auditWorkflow(workflow('./.github/actions/local-check')), []);
+});
