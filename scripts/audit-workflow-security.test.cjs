@@ -67,3 +67,14 @@ test('rejects traversing local action reference', () => {
 test('accepts static local action reference', () => {
   assert.deepEqual(auditWorkflow(workflow('./.github/actions/local-check')), []);
 });
+
+test('rejects checkout credentials setting nested under another with option', () => {
+  const content = workflow().replace(
+    '          persist-credentials: false',
+    '          unrelated:\n            persist-credentials: false'
+  );
+  assert.match(auditWorkflow(content).join(' '), /credentials/);
+});
+test('accepts checkout credentials setting as a direct with child', () => {
+  assert.deepEqual(auditWorkflow(workflow()), []);
+});
