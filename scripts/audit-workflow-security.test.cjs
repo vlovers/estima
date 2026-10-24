@@ -45,3 +45,15 @@ test('rejects branch-based action references', () => {
 test('rejects shorthand permissions', () => {
   assert.match(auditWorkflow(workflow().replace('permissions:\n  contents: read', 'permissions: write-all')).join(' '), /explicit mapping/);
 });
+
+test('rejects dynamic action expression', () => {
+  assert.match(auditWorkflow(workflow('actions/checkout@\u0024{{ inputs.ref }}')).join(' '), /immutable/);
+});
+test('rejects checkout credentials configured outside checkout step', () => {
+  const content = workflow().replace('        with:\n          persist-credentials: false', '') +
+    '\n      - name: unrelated\n        with:\n          persist-credentials: false';
+  assert.match(auditWorkflow(content).join(' '), /credentials/);
+});
+test('rejects top-level read-all shorthand', () => {
+  assert.match(auditWorkflow(workflow().replace('permissions:\n  contents: read', 'permissions: read-all')).join(' '), /explicit mapping/);
+});
