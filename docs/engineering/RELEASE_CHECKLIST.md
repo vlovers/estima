@@ -5,7 +5,7 @@ This is a process gate, not release authorization.
 - [ ] Confirm current release baseline, exact candidate SHA, live open PR/issues and critical defects.
 - [ ] Record what is implemented versus verified, accepted and shipped; ensure docs match release scope.
 - [ ] Run applicable clean install, static checks, unit/integration/E2E and build against exact candidate revision.
-- [ ] Verify security, sensitive settings, third-party rights and dependency changes; collect independent review evidence.
+- [ ] Verify security, sensitive settings, third-party rights and dependency changes; collect independent review evidence tied to the exact head SHA, distinguish technical AI review from authorized GitHub approval, and revalidate after material changes.
 - [ ] Tenant authorization including cross-user reads/writes, clarification atomicity and concurrent retry (#10), refresh JWT lifecycle, migration chains/rollback strategy, estimation/calibration, full-stack E2E.
 - [ ] Fresh and upgrade migration smoke, disposable DB, API/web real flow, secrets and deployment/rollback must be proven before release. Current default branch is develop; do not presume main.
 - [ ] Confirm environment-specific smoke checks and documented mitigation/rollback, with secrets excluded from logs.
