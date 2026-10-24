@@ -5,7 +5,7 @@ Estima is an Nx monorepo with NestJS, React, TypeORM and PostgreSQL. The default
 ## Start
 
 1. Read [README.md](README.md), the code and linked Issues before changing behavior. When merged, `AGENTS.md` is the canonical agent contract; until then see [foundation PR #13](https://github.com/vlovers/estima/pull/13).
-2. Use Node.js 24 and Bun 1.3.2, then install dependencies according to the checked-in lockfile.
+2. Use Node.js 24 and Bun 1.3.2 (as declared by the repository tooling), then install dependencies with `bun install --frozen-lockfile` to preserve the checked-in lockfile.
 3. Branch from current `develop` and keep changes scoped to one verifiable outcome.
 4. Add or update tests for the observable change. All external services and databases used by integration tests must be disposable.
 5. Open a PR with linked Issue, acceptance criteria, actual commands and outcomes, operational risks, and a review handoff.
