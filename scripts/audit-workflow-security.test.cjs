@@ -78,3 +78,31 @@ test('rejects checkout credentials setting nested under another with option', ()
 test('accepts checkout credentials setting as a direct with child', () => {
   assert.deepEqual(auditWorkflow(workflow()), []);
 });
+
+test('accepts valid YAML keys with whitespace before colon', () => {
+  const spaced = workflow()
+    .replace('permissions:', 'permissions :')
+    .replace('contents:', 'contents :')
+    .replace('uses:', 'uses :')
+    .replace('with:', 'with :')
+    .replace('persist-credentials:', 'persist-credentials :');
+  assert.deepEqual(auditWorkflow(spaced), []);
+});
+test('rejects empty uses value', () => {
+  assert.match(auditWorkflow(workflow().replace('uses: ' + checkout, 'uses:')).join(' '), /uses must specify/);
+});
+test('rejects uses containing only a comment', () => {
+  assert.match(auditWorkflow(workflow().replace('uses: ' + checkout, 'uses: # empty')).join(' '), /uses must specify/);
+});
+test('rejects floating action tag when uses key has whitespace', () => {
+  assert.match(auditWorkflow(workflow('actions/checkout@v4').replace('uses:', 'uses :')).join(' '), /immutable/);
+});
+test('rejects job-level write permission with spaced YAML keys', () => {
+  const content = workflow() + '\n    permissions :\n      id-token : write';
+  assert.match(auditWorkflow(content).join(' '), /write permissions/);
+});
+test('does not accept credentials from next step with spaced uses key', () => {
+  const content = workflow().replace('        with:\n          persist-credentials: false', '') +
+    '\n      - uses : ' + node + '\n        with:\n          persist-credentials: false';
+  assert.match(auditWorkflow(content).join(' '), /credentials/);
+});
