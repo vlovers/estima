@@ -1,6 +1,6 @@
 # AI engineering contract — estima
 
-Read README.md and existing engineering/product policies before changes. README.md, api/src/database, api/jest.integration.config.ts, package.json are relevant source documents; confirm paths before treating references as authoritative.
+Read README.md and existing engineering/product policies before changes. README.md, api/src/database/data-source.ts, api/jest.integration.config.ts and package.json are relevant source files; inspect the migration scripts and active migration chain before modifying persistence.
 
 ## Product boundaries
 Multi-tenant React/NestJS/TypeORM/PostgreSQL estimates application. Never leak cross-tenant information, accept non-atomic partial clarification writes, or alter migrations destructively. Confirm actual Nx/Bun scripts before running.
