@@ -1,0 +1,6 @@
+# Keep general issue intake available while directing sensitive reports to SECURITY.md.
+blank_issues_enabled: true
+contact_links:
+  - name: Security vulnerability (private reporting instructions)
+    url: https://github.com/vlovers/estima/blob/develop/SECURITY.md
+    about: Do not post exploit details or secrets in a public issue. Read the policy before reporting.
