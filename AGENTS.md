@@ -18,7 +18,7 @@ Multi-tenant React/NestJS/TypeORM/PostgreSQL estimates application. Never leak c
 - `bun run test`
 - `bun run build:api`
 - `bun run build:web`
-- `bun run test:api:integration (disposable PostgreSQL)`
+- `bun run test:api:integration` (disposable PostgreSQL required)
 - `bun run test:e2e:api`
 - `bun run test:e2e:web`
 - `bun run migration-test:baseline`
