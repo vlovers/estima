@@ -45,7 +45,12 @@ function auditWorkflow(content, filename = '<workflow>') {
     const match = lines[i].match(/^\s*(?:-\s*)?uses:\s*([^\s#]+)/);
     if (!match) continue;
     const action = match[1];
-    if (action.startsWith('./')) continue;
+    if (action.startsWith('./')) {
+      if (!/^\\.\\/[A-Za-z0-9_./-]+$/.test(action) || action.includes('..')) {
+        errors.push(filename + ':' + (i + 1) + ': local action path must be static and stay inside repository');
+      }
+      continue;
+    }
     if (!PINNED_ACTION.test(action)) {
       errors.push(filename + ':' + (i + 1) + ': action must use a full immutable 40-character SHA: ' + action);
     }
