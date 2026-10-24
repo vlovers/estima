@@ -46,7 +46,7 @@ function auditWorkflow(content, filename = '<workflow>') {
     if (!match) continue;
     const action = match[1];
     if (action.startsWith('./')) {
-      if (!/^\\.\\/[A-Za-z0-9_./-]+$/.test(action) || action.includes('..')) {
+      if (!/^\\.\\/[A-Za-z0-9_.\/-]+$/.test(action) || action.includes('..')) {
         errors.push(filename + ':' + (i + 1) + ': local action path must be static and stay inside repository');
       }
       continue;
