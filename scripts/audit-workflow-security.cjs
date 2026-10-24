@@ -73,7 +73,7 @@ function auditWorkflow(content, filename = '<workflow>') {
         if (!lines[k].trim() || lines[k].trim().startsWith('#')) continue;
         const keyIndent = lines[k].match(/^\s*/)[0].length;
         if (keyIndent <= withIndent) break;
-        if (/^\s*persist-credentials:\s*false\s*(?:#.*)?$/.test(lines[k])) {
+        if (keyIndent === withIndent + 2 && /^\s*persist-credentials:\s*false\s*(?:#.*)?$/.test(lines[k])) {
           credentialsDisabled = true;
         }
       }
