@@ -26,6 +26,14 @@ CI run links and known failures:
 - Rollback or recovery plan (if applicable):
 - Unresolved risks / blockers:
 
+
+## Estima tenant, mutation and migration gates
+- [ ] For authorization changes, negative cross-tenant/cross-user read and write cases are covered.
+- [ ] For mutation changes, UPDATE/DELETE and clarification writes preserve atomicity; concurrent retry behavior tested where relevant.
+- [ ] For schema changes, migration chain, fresh install, upgrade and rollback behavior are verified against disposable PostgreSQL; never use production credentials.
+- [ ] JWT refresh lifecycle and relevant API/web E2E are covered when affected.
+- [ ] Record the exact commands supported by the current `develop` target branch and actual outcomes; do not mark unrun checks as passing.
+
 ## Merge gate
 - [ ] Required checks passed
 - [ ] Independent review obtained (not author self-review)
