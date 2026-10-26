@@ -34,6 +34,8 @@ CI run links and known failures:
 - [ ] JWT refresh lifecycle and relevant API/web E2E are covered when affected.
 - [ ] Record the exact commands supported by the current `develop` target branch and actual outcomes; do not mark unrun checks as passing.
 
+See [Definition of Done](../docs/engineering/DEFINITION_OF_DONE.md), [independent review policy](../docs/engineering/REVIEW_POLICY.md), and [release checklist](../docs/engineering/RELEASE_CHECKLIST.md).
+
 ## Merge gate
 - [ ] Required checks passed
 - [ ] Independent review obtained (not author self-review)
