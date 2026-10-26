@@ -23,6 +23,6 @@ Estima is a tenant-aware NestJS/React/Nx estimation app. Preserve tenant isolati
 ## Definition of Done
 Acceptance criteria met; regression tests and applicable checks green; docs updated; security and operational impact recorded; independent review obtained; no unresolved blocking findings.
 
-See also: [independent review policy](docs/engineering/REVIEW_POLICY.md) and [release checklist](docs/engineering/RELEASE_CHECKLIST.md). These documents supplement this contract and `CONTRIBUTING.md`; they do not replace stricter project-specific requirements.
+See also: [Definition of Done](docs/engineering/DEFINITION_OF_DONE.md), [independent review policy](docs/engineering/REVIEW_POLICY.md), and [release checklist](docs/engineering/RELEASE_CHECKLIST.md). These documents supplement this contract and `CONTRIBUTING.md`; they do not replace stricter project-specific requirements.
 
 Cross-repository governance tracking: vlovers/ai-office#87. These instructions apply only to this repository.
