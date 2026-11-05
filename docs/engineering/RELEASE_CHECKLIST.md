@@ -11,4 +11,4 @@ This checklist is a gate, not authorization to release.
 - [ ] Obtain explicit maintainer authorization before merge, publication or deployment.
 - [ ] Independently verify the actual published artifact or deployment; record SHA, version and evidence.
 
-Project-specific gates: Estima requires tenant/authorization, atomic mutation and migration checks. Last Chapter requires narrative regression and Ukrainian-language review. This checklist does not replace stricter local instructions.
+Project-specific gates: Estima requires negative cross-tenant/cross-user authorization cases, atomic clarification and UPDATE/DELETE behavior, concurrent retry where relevant, JWT refresh lifecycle, migration-chain compatibility, disposable-PostgreSQL fresh/upgrade/rollback smoke, estimation/calibration, and real API/web E2E. Confirm the actual `develop` target and independently verify the deployed origin after authorized release; exclude secrets from logs. This checklist does not replace stricter Estima instructions.
