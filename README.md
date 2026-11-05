@@ -4,6 +4,8 @@ A full-stack TypeScript application for organizing development projects and task
 
 > **Status:** Active development. Public demo and screenshots are not yet available.
 
+**Engineering governance:** [Agent working agreement](AGENTS.md) · [Multi-agent workflow](docs/engineering/MULTI_AGENT_WORKFLOW.md) · [Definition of Done](docs/engineering/DEFINITION_OF_DONE.md) · [Independent review](docs/engineering/REVIEW_POLICY.md) · [Release checklist](docs/engineering/RELEASE_CHECKLIST.md). These documents coordinate contributions; they do not relax tenant isolation, migration safety, or deployment approvals.
+
 ## Architecture at a glance
 
 ```text
