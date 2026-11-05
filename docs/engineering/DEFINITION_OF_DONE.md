@@ -6,7 +6,7 @@ A change is **implemented** when the agreed scope exists, **verified** when rele
 - Acceptance criteria, scope, compatibility and non-goals are explicit; report architecture, API, security, localization, migration and operational impact where applicable. Do not silently reduce scope or claim mock-only checks prove production behavior.
 - Tenant isolation is preserved; include negative cross-tenant/cross-user read and write cases for authorization changes.
 - UPDATE/DELETE and clarification writes remain atomic; test concurrent retry behavior when relevant.
-- JWT refresh lifecycle, migration chain, fresh install/upgrade/rollback and relevant API/web E2E are verified where affected.
+- JWT refresh lifecycle, migration chain, fresh install/upgrade/rollback, estimation/calibration and relevant API/web E2E are verified where affected. Verify real API/web flows rather than relying only on isolated mocks.
 - Use only disposable PostgreSQL for mutating integration tests; never use production credentials. Confirm actual scripts on the target branch (`develop`), and record exact commands and results; never claim unrun checks passed.
 - Independent reviewer records identity, reviewed head SHA, findings and disposition. AI review is not authorized GitHub approval. Re-review material changes and resolve blocking findings.
 - Docs, UI states and release limitations match actual behavior. Deployment and rollback require separate evidence and explicit maintainer authorization.
