@@ -51,6 +51,14 @@ The author cannot independently approve their own change. AI reviewer feedback m
 
 States: `planned`, `claimed`, `in progress`, `blocked`, `in review`, `changes requested`, `verified`, `accepted`, `integrated`, `deployed`. Track release as a separate operation. Do not infer success from an AI agent's prose or green CI unrelated to the reviewed SHA.
 
+## Evidence artifacts and retention
+
+- Record the **exact full base, head and tested SHA**, workflow run URL, command, environment, exit status, and responsible validation owner in the parent Issue or PR. Evidence from an earlier head is historical, not a current pass. Distinguish `NOT RUN`, `N/A`, `QUEUED`, `FAIL` and `PASS`; a skipped or queued job never satisfies a required gate.
+- Keep only **sanitized** logs, test summaries, screenshots and migration evidence in approved GitHub Actions artifacts or linked review records. Do not upload JWTs, session cookies, environment files, PostgreSQL connection strings, tenant/customer records, raw database dumps or private browser traces. Redact before upload and verify redaction rather than assuming the CI system removes secrets.
+- In the handoff, identify each artifact by run URL/name, producer, tested SHA, retention or expiry date, access restrictions, and reproducible command. When artifacts expire or cannot be accessed, mark the corresponding evidence unavailable and revalidate the affected head rather than asserting a historical pass.
+- Do not use public gist, personal cloud storage or Issue attachments as an alternative channel for sensitive test data. For migration verification, record sanitized schema-level outcomes from a separately verified disposable PostgreSQL environment; never attach row-level production data.
+- Preserve evidence and the previous branch on interrupted integration. Reconcile shared Nx/lockfile, tenant/auth, DTO and migration contracts against current `develop` before re-running affected checks. No automatic merge, release or deployment follows from an artifact being present.
+
 ## Conflicts and recovery
 
 - Shared migration, auth, tenant contract or package-lock edits: stop conflicting work; preserve both branches; name one integration owner; test after reconciliation.
