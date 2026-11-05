@@ -22,6 +22,16 @@ See [multi-agent workflow](../docs/engineering/MULTI_AGENT_WORKFLOW.md).
 
 ## Verification evidence
 Record commands and results (do not check a box for an unrun command).
+
+| Check | PASS / FAIL / N/A / NOT RUN | Exact command, run link, environment, reason |
+| --- | --- | --- |
+| Static / lint / types | | |
+| Unit / integration | | |
+| API/web build | | |
+| Product / browser E2E | | |
+| Security / tenant isolation / migrations / third-party rights | | |
+
+Distinguish actual results from proposed checks; disclose unsupported behavior and incomplete coverage.
 - [ ] Formatting / lint
 - [ ] Typecheck (if applicable)
 - [ ] Unit / integration tests
