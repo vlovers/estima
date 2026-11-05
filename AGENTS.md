@@ -5,6 +5,10 @@ Applies to this repository. Read the README and relevant local documentation bef
 ## Project boundaries
 Estima is a tenant-aware NestJS/React/Nx estimation app. Preserve tenant isolation, authorization boundaries, JWT lifecycle, atomic mutations, and explicit database migrations. Validate migration/integration tests against disposable PostgreSQL only.
 
+## Estima verification baseline
+
+Confirm the real Bun/Nx scripts before execution. Applicable checks may include `bun run lint`, `bun run test`, `bun run build:api`, `bun run build:web`, `bun run test:api:integration`, `bun run test:e2e:api`, `bun run test:e2e:web`, and `bun run migration-test:baseline`. Database integration and migration checks require independently verified disposable PostgreSQL; never use production credentials. Review `api/src/database/data-source.ts`, `api/jest.integration.config.ts`, active migration scripts and `package.json` before changing persistence. Commands listed here are guidance, not claims of execution.
+
 ## Development protocol
 1. Start from a scoped issue and feature branch. Identify acceptance criteria and affected behavior.
 2. Read existing implementation and tests; avoid unrelated refactors or generated-file churn.
