@@ -1,0 +1,59 @@
+name: Engineering work package
+description: One scoped engineering or governance task with ownership and verifiable acceptance criteria
+title: "[Engineering] "
+body:
+  - type: markdown
+    attributes:
+      value: "Link to the parent issue and reuse existing PRs before creating a new one. Keep project-specific rules in AGENTS.md authoritative."
+  - type: input
+    id: parent
+    attributes:
+      label: Parent issue / roadmap
+      description: "Parent issue URL; governance parent is #18."
+      placeholder: "https://github.com/vlovers/estima/issues/18"
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Outcome and acceptance criteria
+      description: State the user-visible or governance outcome and independently verifiable criteria.
+    validations:
+      required: true
+  - type: textarea
+    id: boundaries
+    attributes:
+      label: Scope and exclusions
+      description: "Explicitly list paths allowed to change, forbidden paths, and project-specific invariants (Bun/Nx, PostgreSQL tenancy and authorization)."
+    validations:
+      required: true
+  - type: textarea
+    id: ownership
+    attributes:
+      label: Agent ownership and dependencies
+      description: "List 2–5 agents only when genuinely parallelizable; one worktree per agent, non-overlapping file ownership, dependency order and integration owner. For serial work, justify one agent."
+    validations:
+      required: true
+  - type: textarea
+    id: verification
+    attributes:
+      label: Verification plan
+      description: "List actual repository-specific commands, negative/security cases, exact head SHA, required CI and independent reviewer. Never claim pending CI passed."
+    validations:
+      required: true
+  - type: textarea
+    id: handoff
+    attributes:
+      label: Handoff, artifacts and recovery
+      description: "Expected artifacts, location/retention, current branch/SHA, resume instructions, rollback and known blockers."
+    validations:
+      required: true
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Delivery safety
+      options:
+        - label: Existing related Issues and PRs were checked for duplicates.
+          required: true
+        - label: No autonomous merge, release, deployment, self-approval or branch protection changes.
+          required: true
