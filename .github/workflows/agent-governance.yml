@@ -1,23 +1,11 @@
 name: Agent governance contract
+# PR checks run for every change, including code-only PRs; path filters can leave
+# required checks pending forever and allow governance checks to be skipped.
 on:
   pull_request:
-    paths:
-      - 'AGENTS.md'
-      - 'CLAUDE.md'
-      - '.github/PULL_REQUEST_TEMPLATE.md'
-      - 'docs/engineering/**'
-      - 'scripts/check-governance.mjs'
-      - 'test/check-governance.test.mjs'
-      - '.github/workflows/agent-governance.yml'
   push:
-    paths:
-      - 'AGENTS.md'
-      - 'CLAUDE.md'
-      - '.github/PULL_REQUEST_TEMPLATE.md'
-      - 'docs/engineering/**'
-      - 'scripts/check-governance.mjs'
-      - 'test/check-governance.test.mjs'
-      - '.github/workflows/agent-governance.yml'
+    branches: [develop]
+  workflow_dispatch:
 permissions:
   contents: read
 jobs:
