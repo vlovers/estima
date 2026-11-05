@@ -3,7 +3,7 @@
 A change is **implemented** when the agreed scope exists, **verified** when relevant checks and independent review have evidence, **accepted** when the maintainer confirms requirements, and **released** only after deployment and external verification. These states are distinct.
 
 ## Required evidence
-- Acceptance criteria, scope, compatibility and non-goals are explicit.
+- Acceptance criteria, scope, compatibility and non-goals are explicit; report architecture, API, security, localization, migration and operational impact where applicable. Do not silently reduce scope or claim mock-only checks prove production behavior.
 - Tenant isolation is preserved; include negative cross-tenant/cross-user read and write cases for authorization changes.
 - UPDATE/DELETE and clarification writes remain atomic; test concurrent retry behavior when relevant.
 - JWT refresh lifecycle, migration chain, fresh install/upgrade/rollback and relevant API/web E2E are verified where affected.
