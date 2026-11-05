@@ -9,6 +9,17 @@
 - [ ] For tenant/auth/mutation changes, include negative cross-tenant and authorization cases and verify atomic update/delete behavior.
 - [ ] For schema changes, describe migration compatibility and validation against disposable PostgreSQL; never use production credentials.
 
+## Multi-agent coordination
+- Parent issue, batch owner, reviewer, integration owner:
+- Existing/superseded PRs and dependency order:
+- Owned paths and shared tenant/auth/API/migration contracts:
+- Target branch and exact base/head SHAs:
+- [ ] Coherent end-to-end outcome with tests, not artificial micro-PRs
+- [ ] Conflicts and shared contract ownership resolved without overwriting another agent
+- [ ] Verification and review reflect final head and integration base
+
+See [multi-agent workflow](../docs/engineering/MULTI_AGENT_WORKFLOW.md).
+
 ## Verification evidence
 Record commands and results (do not check a box for an unrun command).
 - [ ] Formatting / lint
