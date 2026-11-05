@@ -3,7 +3,7 @@
 Applies to this repository. Read the README and relevant local documentation before changes; more-specific scoped instructions may add requirements but cannot relax security gates.
 
 ## Project boundaries
-Estima is a tenant-aware NestJS/React/Nx estimation app. Preserve tenant isolation, authorization boundaries, JWT lifecycle, atomic mutations, and explicit database migrations. Validate migration/integration tests against disposable PostgreSQL only.
+Estima is a tenant-aware NestJS/React/Nx estimation app. Preserve tenant isolation, authorization boundaries, JWT refresh lifecycle, atomic clarification UPDATE/DELETE writes (including concurrent retry behavior), and explicit database migrations. Authorization regressions must cover negative cross-tenant and cross-user reads/writes; do not accept partial clarification persistence or destructive migration shortcuts. Validate migration/integration tests against disposable PostgreSQL only.
 
 ## Estima verification baseline
 
