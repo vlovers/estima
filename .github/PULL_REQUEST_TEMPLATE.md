@@ -41,6 +41,21 @@ Distinguish actual results from proposed checks; disclose unsupported behavior a
 
 CI run links and known failures:
 
+## User experience, AI data and operational safety
+- User-facing flow, accessibility, loading/empty/error states, and browser/device coverage (or N/A with reason):
+- AI-assisted input/output safety: prompt-injection and untrusted-content handling, sensitive-data exposure, logging/redaction and model-output validation (or N/A):
+- Authentication, authorization and cross-tenant read/write exposure, including negative cases (or N/A):
+- Migration forward/backward compatibility, fresh-install/upgrade evidence, rollback feasibility and disposable PostgreSQL environment (or N/A):
+- Data compatibility, concurrent writes/retries, token refresh and operational monitoring implications (or N/A):
+- Secrets, customer data, private configuration and sensitive reports excluded from PR description, fixtures and CI logs:
+- Security disclosure: never publish exploit details or credentials in public PR/Issues; follow the repository SECURITY.md policy when present.
+
+## Independent review and acceptance evidence
+- Reviewer distinct from author, reviewed exact head SHA, date and evidence:
+- Findings by severity, concrete failure scenario, disposition and regression evidence:
+- Material changes after review and re-review required:
+- Maintainer acceptance / merge authorization: **not implied by green CI or AI review**.
+
 ## Risk, documentation and release
 - Security / authorization / secrets / data impact:
 - Documentation and migration changes:
