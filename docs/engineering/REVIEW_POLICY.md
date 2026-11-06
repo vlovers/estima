@@ -1,0 +1,7 @@
+# Independent review policy
+
+Every change requires an independent assessment of the actual base-to-head diff, acceptance criteria, tests, documentation and security implications. The author and reviewer must be distinct. A second AI model may provide useful technical findings, but AI feedback is not an authorized GitHub approval; required human approvals and branch protections still apply.
+
+Record reviewer, reviewed head SHA, scope, evidence, and findings with severity, concrete failure scenario and resolution. High-severity security or correctness findings block acceptance. Material changes after review require fresh review or documented revalidation. Green CI is not a substitute for independent review.
+
+Project-specific focus: Estima tenant isolation and negative cross-user read/write cases, authorization, atomic clarification and UPDATE/DELETE mutations, concurrent retries, JWT refresh lifecycle, migration chain/rollback, estimation/calibration and full-stack API/web E2E. Prioritize user-visible correctness, privacy/security, migration/API compatibility, weak or mock-only tests, and scope/duplication. Findings should identify a concrete file/line, failure scenario or uncertainty, severity and actionable remediation/test; medium findings need documented disposition. Preserve stricter Estima rules. No reviewer may merge, deploy, publish or weaken security settings without explicit maintainer authorization.
