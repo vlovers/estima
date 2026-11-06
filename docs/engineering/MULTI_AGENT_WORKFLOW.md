@@ -22,6 +22,8 @@ The author cannot independently approve their own change. AI reviewer feedback m
 
 ### Parallel scheduling
 
+Use **2–5 independent agents** only when the parent Issue has genuinely separable, non-overlapping work. Fewer agents are appropriate when shared contracts, security review, or migration sequencing make parallelism unsafe. Each active agent must have a named owner, dedicated worktree, explicit file scope, dependencies, and handoff recipient; the coordinator owns the single integration PR.
+
 1. Inventory the actual target branch (`develop` for existing governance PRs), open Issues/PRs, schema state and active worktrees. Record base SHA.
 2. Identify **shared contracts** first: Nx project dependencies, API DTOs, tenant context, auth/JWT services, migration chain, lockfiles, CI and cross-package types. Assign a single integration owner for each. Dependent frontend/backend batches start after those interfaces are pinned, not by independently guessing shapes.
 3. Claim each batch with named owner, dedicated worktree and branch, expected files, dependencies and reviewer on the Issue. Claims coordinate humans/agents; GitHub does not enforce these as file locks.
@@ -75,7 +77,9 @@ Owner, reviewer, integration owner:
 Target branch + base SHA; head branch + head SHA:
 Owned files and dependency PRs:
 Tenant/auth/JWT/API/schema impact:
-Actual checks (command, status, environment, CI URL):
+Actual checks (command, status, environment, tested full SHA, CI URL; PASS/FAIL/NOT RUN/N/A/QUEUED):
+Evidence artifacts (name/URL, producer, tested SHA, access restrictions, retention/expiry, reproduction command):
+Expired, stale, inaccessible or redacted evidence requiring revalidation:
 Disposable database verification (or NOT RUN):
 Negative security and transaction cases:
 Migration compatibility and rollback:
