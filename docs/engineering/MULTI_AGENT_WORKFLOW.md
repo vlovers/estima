@@ -55,9 +55,9 @@ States: `planned`, `claimed`, `in progress`, `blocked`, `in review`, `changes re
 
 ## Evidence artifacts and retention
 
-- Record the **exact full base, head and tested SHA**, workflow run URL, command, environment, exit status, and responsible validation owner in the parent Issue or PR. Evidence from an earlier head is historical, not a current pass. Distinguish `NOT RUN`, `N/A`, `QUEUED`, `FAIL` and `PASS`; a skipped or queued job never satisfies a required gate.
+- Record the **exact full base, head and tested SHA**, workflow run URL, command, environment, exit status, and responsible validation owner in the parent Issue or PR. Evidence from an earlier head is historical, not a current pass. Record each outcome as `PASS`, `FAIL`, `NOT RUN`, `N/A` (with reason), `QUEUED`, `STALE` (superseded tested SHA), or `UNAVAILABLE` (missing, expired, deleted or inaccessible evidence). A skipped or queued job never satisfies a required gate; a historical PASS remains historical after its SHA is superseded.
 - Keep only **sanitized** logs, test summaries, screenshots and migration evidence in approved GitHub Actions artifacts or linked review records. Do not upload JWTs, session cookies, environment files, PostgreSQL connection strings, tenant/customer records, raw database dumps or private browser traces. Redact before upload and verify redaction rather than assuming the CI system removes secrets.
-- In the handoff, identify each artifact by run URL/name, producer, tested SHA, retention or expiry date, access restrictions, and reproducible command. When artifacts expire or cannot be accessed, mark the corresponding evidence unavailable and revalidate the affected head rather than asserting a historical pass.
+- In the handoff, identify each artifact by run URL/name, producer, tested SHA, retention or expiry date, access restrictions, and reproducible command. When artifacts expire or cannot be accessed, mark the corresponding evidence `UNAVAILABLE`; if the tested SHA is superseded, mark it `STALE`. Record the safe reproduction command and revalidate the affected current head rather than asserting a historical pass. Do not rerun queued Actions merely to refresh evidence.
 - Do not use public gist, personal cloud storage or Issue attachments as an alternative channel for sensitive test data. For migration verification, record sanitized schema-level outcomes from a separately verified disposable PostgreSQL environment; never attach row-level production data.
 - Preserve evidence and the previous branch on interrupted integration. Reconcile shared Nx/lockfile, tenant/auth, DTO and migration contracts against current `develop` before re-running affected checks. No automatic merge, release or deployment follows from an artifact being present.
 
@@ -77,7 +77,7 @@ Owner, reviewer, integration owner:
 Target branch + base SHA; head branch + head SHA:
 Owned files and dependency PRs:
 Tenant/auth/JWT/API/schema impact:
-Actual checks (command, status, environment, tested full SHA, CI URL; PASS/FAIL/NOT RUN/N/A/QUEUED):
+Actual checks (command, status, environment, tested full SHA, CI URL; PASS/FAIL/NOT RUN/N/A/QUEUED/STALE/UNAVAILABLE):
 Evidence artifacts (name/URL, producer, tested SHA, access restrictions, retention/expiry, reproduction command):
 Expired, stale, inaccessible or redacted evidence requiring revalidation:
 Disposable database verification (or NOT RUN):
